@@ -15,7 +15,7 @@ USER_COMMON_SRCS := src/user/cli_common.c
 KNOCKD_SRCS := src/user/knock_user.c src/user/xdp_loader.c $(USER_COMMON_SRCS)
 KNOCK_CLIENT_SRCS := src/user/knock_client.c src/user/net_checksum.c $(USER_COMMON_SRCS)
 
-.PHONY: all clean run test help
+.PHONY: all clean run test test-netns test-ssh help
 
 all: $(BPF_OBJ) $(USER_BIN) $(KNOCK_CLIENT_BIN)
 
@@ -24,6 +24,8 @@ help:
 	@echo "  make all          Build eBPF object + user-space binaries"
 	@echo "  make run IFACE= HMAC_KEY= PROTECT=   Attach XDP gate with signed knock config"
 	@echo "  make test         Run integration smoke test (requires root)"
+	@echo "  make test-netns   Run network-namespace integration scenario (requires root)"
+	@echo "  make test-ssh     Run SSH functional netns scenario (requires root + sshd)"
 	@echo "  make clean        Remove build artifacts"
 
 include/vmlinux.h:
@@ -54,6 +56,12 @@ run: all
 
 test: all
 	sudo ./scripts/test_e2e.sh
+
+test-netns: all
+	sudo ./scripts/test_e2e_netns.sh
+
+test-ssh: all
+	sudo ./scripts/test_e2e_netns_ssh.sh
 
 clean:
 	rm -rf $(BUILD_DIR)

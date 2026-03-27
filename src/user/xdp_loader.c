@@ -29,10 +29,12 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
 {
     int config_fd;
     int auth_fd;
+    int replay_fd;
     int stats_fd;
     int snap_fd;
     char config_pin[256];
     char auth_pin[256];
+    char replay_pin[256];
     char stats_pin[256];
     char snap_pin[256];
 
@@ -42,11 +44,13 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
 
     config_fd = bpf_object__find_map_fd_by_name(obj, "config_map");
     auth_fd = bpf_object__find_map_fd_by_name(obj, "auth_map");
+    replay_fd = bpf_object__find_map_fd_by_name(obj, "replay_nonce_map");
     stats_fd = bpf_object__find_map_fd_by_name(obj, "stats_map");
     snap_fd = bpf_object__find_map_fd_by_name(obj, "debug_knock_map");
 
     snprintf(config_pin, sizeof(config_pin), "%s/config_map", pin_dir);
     snprintf(auth_pin, sizeof(auth_pin), "%s/auth_map", pin_dir);
+    snprintf(replay_pin, sizeof(replay_pin), "%s/replay_nonce_map", pin_dir);
     snprintf(stats_pin, sizeof(stats_pin), "%s/stats_map", pin_dir);
     snprintf(snap_pin, sizeof(snap_pin), "%s/debug_knock_map", pin_dir);
 
@@ -55,6 +59,9 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     }
     if (auth_fd >= 0 && pin_map_fd(auth_fd, auth_pin) != 0) {
         fprintf(stderr, "warn: failed to pin auth_map at %s: %s\n", auth_pin, strerror(errno));
+    }
+    if (replay_fd >= 0 && pin_map_fd(replay_fd, replay_pin) != 0) {
+        fprintf(stderr, "warn: failed to pin replay_nonce_map at %s: %s\n", replay_pin, strerror(errno));
     }
     if (stats_fd >= 0 && pin_map_fd(stats_fd, stats_pin) != 0) {
         fprintf(stderr, "warn: failed to pin stats_map at %s: %s\n", stats_pin, strerror(errno));

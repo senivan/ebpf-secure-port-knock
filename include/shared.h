@@ -33,10 +33,20 @@ struct auth_state {
     __u64 expires_at_ns;
 };
 
+struct replay_nonce_key {
+    __u32 src_ip;
+    __u32 nonce;
+};
+
+struct replay_nonce_state {
+    __u64 expires_at_ns;
+};
+
 struct debug_counters {
     __u64 knock_seen;
     __u64 knock_short;
     __u64 knock_valid;
+    __u64 replay_drop;
     __u64 protected_drop;
     __u64 protected_pass;
 };

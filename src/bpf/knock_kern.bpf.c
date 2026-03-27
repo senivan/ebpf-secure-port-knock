@@ -22,6 +22,13 @@ struct {
 } auth_map SEC(".maps");
 
 struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 8192);
+    __type(key, struct replay_nonce_key);
+    __type(value, struct replay_nonce_state);
+} replay_nonce_map SEC(".maps");
+
+struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 1);
     __type(key, __u32);
@@ -158,12 +165,20 @@ int port_knock_xdp(struct xdp_md *ctx)
     now_ns = bpf_ktime_get_ns();
 
     if (dst_port == cfg->knock_port) {
+        __u32 nonce_host;
+        __u64 replay_window_ns;
+        struct replay_nonce_key replay_key;
+        struct replay_nonce_state replay_state = {};
+        struct replay_nonce_state *seen;
+
         bump(stats ? &stats->knock_seen : NULL);
         kpkt = (struct knock_packet *)((void *)tcph + ((__u64)tcph->doff * 4U));
         if (!ptr_ok(kpkt, data_end, sizeof(*kpkt))) {
             bump(stats ? &stats->knock_short : NULL);
             return XDP_DROP;
         }
+
+        nonce_host = bpf_ntohl(kpkt->nonce);
 
         if (snap) {
             snap->magic = kpkt->magic;
@@ -176,6 +191,25 @@ int port_knock_xdp(struct xdp_md *ctx)
         }
 
         if (knock_is_valid(cfg, kpkt)) {
+            replay_key.src_ip = iph->saddr;
+            replay_key.nonce = nonce_host;
+
+            seen = bpf_map_lookup_elem(&replay_nonce_map, &replay_key);
+            if (seen) {
+                if (seen->expires_at_ns >= now_ns) {
+                    bump(stats ? &stats->replay_drop : NULL);
+                    return XDP_DROP;
+                }
+                bpf_map_delete_elem(&replay_nonce_map, &replay_key);
+            }
+
+            replay_window_ns = (__u64)cfg->timeout_ms * 1000000ULL;
+            if (replay_window_ns < ((__u64)KNOCK_MAX_CLOCK_SKEW_SEC * 1000000000ULL)) {
+                replay_window_ns = (__u64)KNOCK_MAX_CLOCK_SKEW_SEC * 1000000000ULL;
+            }
+            replay_state.expires_at_ns = now_ns + replay_window_ns;
+            bpf_map_update_elem(&replay_nonce_map, &replay_key, &replay_state, BPF_ANY);
+
             new_auth.expires_at_ns = now_ns + ((__u64)cfg->timeout_ms * 1000000ULL);
             bpf_map_update_elem(&auth_map, &iph->saddr, &new_auth, BPF_ANY);
             bump(stats ? &stats->knock_valid : NULL);

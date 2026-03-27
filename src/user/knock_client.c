@@ -3,6 +3,7 @@
 #include <getopt.h>
 #include <linux/if_ether.h>
 #include <net/if.h>
+#include <net/if_arp.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netpacket/packet.h>
@@ -10,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -64,8 +66,10 @@ int main(int argc, char **argv)
     struct knock_packet *payload = (struct knock_packet *)(frame + sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr));
     struct sockaddr_ll sll;
     int fd;
+    int ctl_fd;
     int ifindex;
     int opt;
+    struct ifreq ifr;
 
     while ((opt = getopt_long(argc, argv, "i:s:d:p:q:k:n:t:", long_opts, NULL)) != -1) {
         switch (opt) {
@@ -129,6 +133,20 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
+    ctl_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (ctl_fd < 0) {
+        fprintf(stderr, "error: control socket failed: %s\n", strerror(errno));
+        return 1;
+    }
+    if (ioctl(ctl_fd, SIOCGIFHWADDR, &ifr) != 0) {
+        fprintf(stderr, "error: cannot read MAC for %s: %s\n", ifname, strerror(errno));
+        close(ctl_fd);
+        return 1;
+    }
+    close(ctl_fd);
+
     if (!have_ts) {
         struct timespec now;
         if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
@@ -163,8 +181,8 @@ int main(int argc, char **argv)
         }
 
         eth->h_proto = htons(ETH_P_IP);
-        memset(eth->h_source, 0, ETH_ALEN);
-        memset(eth->h_dest, 0, ETH_ALEN);
+        memcpy(eth->h_source, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+        memset(eth->h_dest, 0xff, ETH_ALEN);
 
         iph->version = 4;
         iph->ihl = 5;

@@ -26,7 +26,7 @@ This repository is a starter for a stealth gate model:
 - `clang` with BPF target support
 - `bpftool`
 - Build tools (`make`, `cc`)
-- Root privileges to attach and manage eBPF programs (for future full implementation)
+- Root privileges to attach and manage eBPF programs
 
 ## Quick start
 
@@ -55,6 +55,8 @@ Run integration smoke test (root required):
 
 ```bash
 make test
+make test-netns
+make test-ssh
 ```
 
 ## Current status
@@ -72,15 +74,12 @@ Implemented in userspace:
 - `build/knockd`: libbpf loader that loads object, populates `config_map`, attaches XDP, and detaches on timeout/signal.
 - `build/knock-client`: raw packet sender for signed knock packets (default timestamp source is `CLOCK_MONOTONIC` to match kernel-side freshness checks).
 - `scripts/test_e2e.sh`: smoke test that checks blocked-before-knock and allowed-after-knock behavior on loopback.
+- `scripts/test_e2e_netns.sh`: network-namespace scenario with separate client and attacker hosts over a virtual L2 topology.
+- `scripts/test_e2e_netns_ssh.sh`: network-namespace functional scenario using real SSH client/server flow through the protected port.
 
-TODO:
+<!-- ## next milestones
 
-- Stronger cryptographic primitive depending on kernel capabilities.
-- Replay cache map keyed by nonce to harden against packet replay.
-
-## Suggested next milestones
-
-1. Add libbpf bootstrap (`bpf_object__open_file`, map updates, `bpf_xdp_attach`).
-2. Add a knock client utility that generates signatures with the same shared key.
-3. Add replay protection with nonce cache map and stricter timestamp windows.
-4. Add integration tests in network namespaces that verify unauthorized scans see closed behavior.
+1. Add RFC HMAC-SHA256 mode as an optional protocol variant for interoperability.
+2. Add integration tests in Linux network namespaces to validate behavior across virtual hosts.
+3. Add key rotation support with dual active keys for zero-downtime updates.
+4. Export structured observability (map stats scrape + optional userspace metrics endpoint). -->
