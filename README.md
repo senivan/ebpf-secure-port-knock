@@ -73,9 +73,9 @@ Implemented in userspace:
 - `build/knock-client`: raw packet sender for signed knock packets (default timestamp source is `CLOCK_MONOTONIC` to match kernel-side freshness checks).
 - `scripts/test_e2e.sh`: smoke test that checks blocked-before-knock and allowed-after-knock behavior on loopback.
 
-Still TODO:
+TODO:
 
-- Optional stronger cryptographic primitive depending on kernel capabilities.
+- Stronger cryptographic primitive depending on kernel capabilities.
 - Replay cache map keyed by nonce to harden against packet replay.
 
 ## Suggested next milestones
