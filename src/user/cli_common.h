@@ -1,0 +1,9 @@
+#ifndef CLI_COMMON_H
+#define CLI_COMMON_H
+
+#include "shared.h"
+
+int parse_hmac_key_hex(const char *hex, __u8 out[KNOCK_HMAC_KEY_LEN]);
+int parse_ports_csv(const char *csv, __u16 *ports, __u16 *count);
+
+#endif /* CLI_COMMON_H */
