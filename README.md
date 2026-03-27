@@ -1,4 +1,4 @@
-# eBPF Signed Knock Stealth Gate (Starter)
+# eBPF Signed Knock Stealth Gate
 
 This repository is a starter for a stealth gate model:
 
