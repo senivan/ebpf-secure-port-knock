@@ -48,6 +48,10 @@ struct knock_config {
     __u8 hmac_key[KNOCK_HMAC_KEY_LEN];
 };
 
+struct time_offset_state {
+    __s64 realtime_offset_sec;
+};
+
 struct flow_key {
     __u32 src_ip;
     __u32 dst_ip;

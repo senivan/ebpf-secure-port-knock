@@ -182,7 +182,7 @@ else
 fi
 
 echo "[3/11] client sends signed auth..."
-TS="$(cut -d. -f1 /proc/uptime)"
+TS="$(date +%s)"
 NONCE=314159
 ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
   --ifname "$CLIENT_NS_IF" \
@@ -200,7 +200,7 @@ if [[ -z "$SESSION_ID" ]]; then
     exit 1
 fi
 
-TS_BIND="$(cut -d. -f1 /proc/uptime)"
+TS_BIND="$(date +%s)"
 NONCE_BIND=314157
 ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
     --ifname "$CLIENT_NS_IF" \
@@ -243,7 +243,7 @@ PY
 )"
 
 echo "[6/11] client sends signed deauth with wrong session id..."
-TS_DEAUTH_BAD="$(cut -d. -f1 /proc/uptime)"
+TS_DEAUTH_BAD="$(date +%s)"
 NONCE_DEAUTH_BAD=314158
 ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
     --ifname "$CLIENT_NS_IF" \
@@ -268,7 +268,7 @@ fi
 echo "ok: wrong-session deauth ignored"
 
 echo "[8/11] client sends signed deauth for current session..."
-TS_DEAUTH="$(cut -d. -f1 /proc/uptime)"
+TS_DEAUTH="$(date +%s)"
 NONCE_DEAUTH=314160
 ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
   --ifname "$CLIENT_NS_IF" \
@@ -293,7 +293,7 @@ else
 fi
 
 echo "[10/11] client reauthenticates for timeout fallback check..."
-TS2="$(cut -d. -f1 /proc/uptime)"
+TS2="$(date +%s)"
 NONCE2=314161
 ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
   --ifname "$CLIENT_NS_IF" \
@@ -311,7 +311,7 @@ if [[ -z "$REAUTH_SESSION_ID" ]]; then
         exit 1
 fi
 
-TS_BIND2="$(cut -d. -f1 /proc/uptime)"
+TS_BIND2="$(date +%s)"
 NONCE_BIND2=314162
 ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
     --ifname "$CLIENT_NS_IF" \
