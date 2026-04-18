@@ -11,13 +11,16 @@ BUILD_DIR := build
 BPF_OBJ := $(BUILD_DIR)/knock_kern.bpf.o
 USER_BIN := $(BUILD_DIR)/knockd
 KNOCK_CLIENT_BIN := $(BUILD_DIR)/knock-client
+TEST_CFLAGS ?= -g -O2 -Wall -Wextra
 USER_COMMON_SRCS := src/user/cli_common.c
 KNOCKD_SRCS := src/user/knock_user.c src/user/xdp_loader.c $(USER_COMMON_SRCS)
 KNOCK_CLIENT_SRCS := src/user/knock_client.c src/user/net_checksum.c $(USER_COMMON_SRCS)
+UNIT_TEST_CLI_COMMON := $(BUILD_DIR)/test_cli_common
+UNIT_TEST_NET_CHECKSUM := $(BUILD_DIR)/test_net_checksum
 
-.PHONY: all clean run test test-netns test-ssh test-user-auth test-user-rotation test-user-admin test-user-all test-user-pressure test-config all-test help
+.PHONY: all clean run test test-netns test-ssh test-user-auth test-user-rotation test-user-admin test-user-all test-user-pressure test-config unit-test all-test help
 
-all: $(BPF_OBJ) $(USER_BIN) $(KNOCK_CLIENT_BIN)
+all: $(BPF_OBJ) $(USER_BIN) $(KNOCK_CLIENT_BIN) $(UNIT_TEST_CLI_COMMON) $(UNIT_TEST_NET_CHECKSUM)
 
 help:
 	@echo "Targets:"
@@ -31,6 +34,7 @@ help:
 	@echo "  make test-user-admin     Run per-user admin live-update tests (requires root)"
 	@echo "  make test-user-pressure  Run per-user pressure tests (requires root)"
 	@echo "  make test-config         Run CLI config validation test"
+	@echo "  make unit-test           Run firewall userspace unit tests"
 	@echo "  make test-user-all       Run all per-user feature tests"
 	@echo "  make all-test            Run all test suites"
 	@echo "  make clean        Remove build artifacts"
@@ -49,6 +53,12 @@ $(USER_BIN): $(KNOCKD_SRCS) include/shared.h include/knock_crypto.h | $(BUILD_DI
 
 $(KNOCK_CLIENT_BIN): $(KNOCK_CLIENT_SRCS) include/shared.h include/knock_crypto.h | $(BUILD_DIR)
 	$(USER_CC) $(USER_CFLAGS) -Iinclude $(KNOCK_CLIENT_SRCS) -o $(KNOCK_CLIENT_BIN)
+
+$(UNIT_TEST_CLI_COMMON): tests/test_cli_common.c src/user/cli_common.c include/shared.h include/knock_crypto.h src/user/cli_common.h | $(BUILD_DIR)
+	$(USER_CC) $(TEST_CFLAGS) -Iinclude -Isrc/user tests/test_cli_common.c src/user/cli_common.c -o $(UNIT_TEST_CLI_COMMON)
+
+$(UNIT_TEST_NET_CHECKSUM): tests/test_net_checksum.c src/user/net_checksum.c src/user/net_checksum.h | $(BUILD_DIR)
+	$(USER_CC) $(TEST_CFLAGS) -Iinclude -Isrc/user tests/test_net_checksum.c src/user/net_checksum.c -o $(UNIT_TEST_NET_CHECKSUM)
 
 run: all
 	@if [ -z "$(IFACE)" ] || [ -z "$(USERS_FILE)" ] || [ -z "$(PROTECT)" ]; then \
@@ -87,9 +97,13 @@ test-config: all
 test-user-pressure: all
 	sudo bash ./scripts/test_e2e_user_pressure.sh
 
+unit-test: $(UNIT_TEST_CLI_COMMON) $(UNIT_TEST_NET_CHECKSUM)
+	./$(UNIT_TEST_CLI_COMMON)
+	./$(UNIT_TEST_NET_CHECKSUM)
+
 test-user-all: test-user-auth test-user-rotation test-user-admin
 
-all-test: test test-netns test-ssh test-config test-user-pressure test-user-all
+all-test: unit-test test test-netns test-ssh test-config test-user-pressure test-user-all
 
 clean:
 	rm -rf $(BUILD_DIR)
