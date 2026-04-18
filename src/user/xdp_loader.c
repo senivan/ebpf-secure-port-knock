@@ -34,6 +34,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     int replay_fd;
     int stats_fd;
     int snap_fd;
+    int user_key_fd;
     char config_pin[256];
     char pending_pin[256];
     char active_pin[256];
@@ -41,6 +42,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     char replay_pin[256];
     char stats_pin[256];
     char snap_pin[256];
+    char user_key_pin[256];
 
     if (ensure_dir("/sys/fs/bpf") != 0 || ensure_dir(pin_dir) != 0) {
         return;
@@ -53,6 +55,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     replay_fd = bpf_object__find_map_fd_by_name(obj, "replay_nonce_map");
     stats_fd = bpf_object__find_map_fd_by_name(obj, "stats_map");
     snap_fd = bpf_object__find_map_fd_by_name(obj, "debug_knock_map");
+    user_key_fd = bpf_object__find_map_fd_by_name(obj, "user_key_map");
 
     snprintf(config_pin, sizeof(config_pin), "%s/config_map", pin_dir);
     snprintf(pending_pin, sizeof(pending_pin), "%s/pending_auth_map", pin_dir);
@@ -61,6 +64,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     snprintf(replay_pin, sizeof(replay_pin), "%s/replay_nonce_map", pin_dir);
     snprintf(stats_pin, sizeof(stats_pin), "%s/stats_map", pin_dir);
     snprintf(snap_pin, sizeof(snap_pin), "%s/debug_knock_map", pin_dir);
+    snprintf(user_key_pin, sizeof(user_key_pin), "%s/user_key_map", pin_dir);
 
     if (config_fd >= 0 && pin_map_fd(config_fd, config_pin) != 0) {
         fprintf(stderr, "warn: failed to pin config_map at %s: %s\n", config_pin, strerror(errno));
@@ -83,10 +87,15 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     if (snap_fd >= 0 && pin_map_fd(snap_fd, snap_pin) != 0) {
         fprintf(stderr, "warn: failed to pin debug_knock_map at %s: %s\n", snap_pin, strerror(errno));
     }
+    if (user_key_fd >= 0 && pin_map_fd(user_key_fd, user_key_pin) != 0) {
+        fprintf(stderr, "warn: failed to pin user_key_map at %s: %s\n", user_key_pin, strerror(errno));
+    }
 }
 
 int knock_loader_attach(const struct knock_loader_opts *opts,
                         const struct knock_config *cfg,
+                        const struct knock_user_record *users,
+                        __u32 user_count,
                         struct knock_loader_handle *handle)
 {
     struct bpf_program *prog;
@@ -126,6 +135,35 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
         bpf_object__close(handle->obj);
         handle->obj = NULL;
         return -1;
+    }
+
+    if (users && user_count > 0) {
+        int user_map_fd = bpf_object__find_map_fd_by_name(handle->obj, "user_key_map");
+        __u32 i;
+
+        if (user_map_fd < 0) {
+            fprintf(stderr, "error: failed to find user_key_map\n");
+            bpf_object__close(handle->obj);
+            handle->obj = NULL;
+            return -1;
+        }
+
+        for (i = 0; i < user_count; i++) {
+            struct user_key_state state = {};
+
+            memcpy(state.active_key, users[i].hmac_key, KNOCK_HMAC_KEY_LEN);
+            state.key_version = 1;
+            state.grace_until_ns = 0;
+
+            if (bpf_map_update_elem(user_map_fd, &users[i].user_id, &state, BPF_ANY) != 0) {
+                fprintf(stderr, "error: failed to insert user %u into user_key_map: %s\n",
+                        users[i].user_id,
+                        strerror(errno));
+                bpf_object__close(handle->obj);
+                handle->obj = NULL;
+                return -1;
+            }
+        }
     }
 
     prog = bpf_object__find_program_by_name(handle->obj, "port_knock_xdp");

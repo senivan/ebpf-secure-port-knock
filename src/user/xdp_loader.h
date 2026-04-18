@@ -21,6 +21,8 @@ struct knock_loader_handle {
 
 int knock_loader_attach(const struct knock_loader_opts *opts,
                         const struct knock_config *cfg,
+                        const struct knock_user_record *users,
+                        __u32 user_count,
                         struct knock_loader_handle *handle);
 
 void knock_loader_detach(struct knock_loader_handle *handle);
