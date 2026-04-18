@@ -4,7 +4,7 @@ This repository is a starter for a stealth gate model:
 
 - Device appears closed to unauthorized clients.
 - A client sends one special TCP packet to a dedicated knock port.
-- The knock includes a keyed signature over packet metadata.
+- The knock includes an HMAC-SHA256-based keyed signature over packet metadata.
 - If signature is valid for a registered user, that source IP is temporarily allowed to reach protected service ports.
 - Knock timestamps use Unix epoch seconds, with the XDP program comparing against a loader-seeded realtime offset derived from host clocks.
 
@@ -128,7 +128,6 @@ sudo ./build/knockd list-users
 
 <!-- ## next milestones
 
-1. Add RFC HMAC-SHA256 mode as an optional protocol variant for interoperability.
-2. Add integration tests in Linux network namespaces to validate behavior across virtual hosts.
-3. Add key rotation support with dual active keys for zero-downtime updates.
-4. Export structured observability (map stats scrape + optional userspace metrics endpoint). -->
+1. Add integration tests in Linux network namespaces to validate behavior across virtual hosts.
+2. Add key rotation support with dual active keys for zero-downtime updates.
+3. Export structured observability (map stats scrape + optional userspace metrics endpoint). -->
