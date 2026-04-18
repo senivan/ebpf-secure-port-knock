@@ -1,4 +1,5 @@
 #include <getopt.h>
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,6 +7,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <bpf/bpf.h>
 #include <linux/if_link.h>
 
 #include "cli_common.h"
@@ -23,7 +25,12 @@ static void on_signal(int signo)
 static void usage(const char *prog)
 {
     fprintf(stderr,
-            "Usage: %s --ifname <iface> --hmac-key <64-hex> [options]\n"
+            "Usage:\n"
+            "  %s daemon --ifname <iface> [--users-file <path> | --hmac-key <64-hex>] [options]\n"
+            "  %s register-user --user-id <id> --hmac-key <64-hex> [--pin-dir <path>]\n"
+            "  %s rotate-user-key --user-id <id> --hmac-key <64-hex> [--grace-ms <ms>] [--pin-dir <path>]\n"
+            "  %s revoke-user --user-id <id> [--pin-dir <path>]\n"
+            "  %s list-users [--pin-dir <path>]\n"
             "Options:\n"
             "  --bpf-obj <path>             eBPF object path (default: build/knock_kern.bpf.o)\n"
             "  --knock-port <port>          Knock packet destination port (default: %u)\n"
@@ -32,13 +39,231 @@ static void usage(const char *prog)
             "  --bind-window-ms <ms>        Time to bind first protected flow (default: %u)\n"
             "  --replay-window-ms <ms>      Replay reject window for control packets (default: %u)\n",
             prog,
+            prog,
+            prog,
+            prog,
+            prog,
             KNOCK_DEFAULT_PORT,
             KNOCK_DEFAULT_TIMEOUT_MS,
             KNOCK_DEFAULT_BIND_WINDOW_MS,
             KNOCK_DEFAULT_REPLAY_WINDOW_MS);
 }
 
-int main(int argc, char **argv)
+static int open_user_map(const char *pin_dir)
+{
+    char path[256];
+
+    snprintf(path, sizeof(path), "%s/user_key_map", pin_dir);
+    return bpf_obj_get(path);
+}
+
+static int parse_user_id_arg(const char *s, __u32 *out)
+{
+    char *end = NULL;
+    unsigned long v = strtoul(s, &end, 10);
+
+    if (!end || *end != '\0' || v > 65535UL) {
+        return -1;
+    }
+    *out = (__u32)v;
+    return 0;
+}
+
+static int cmd_register_or_rotate(int argc, char **argv, int rotate)
+{
+    static struct option opts[] = {
+        {"user-id", required_argument, NULL, 'u'},
+        {"hmac-key", required_argument, NULL, 'k'},
+        {"grace-ms", required_argument, NULL, 'g'},
+        {"pin-dir", required_argument, NULL, 'P'},
+        {NULL, 0, NULL, 0},
+    };
+    const char *hex = NULL;
+    const char *pin_dir = "/sys/fs/bpf/knock_gate";
+    __u32 user_id = 0;
+    __u32 grace_ms = 0;
+    __u8 key[KNOCK_HMAC_KEY_LEN];
+    struct user_key_state state = {};
+    int have_user_id = 0;
+    int map_fd;
+    int opt;
+
+    optind = 1;
+    while ((opt = getopt_long(argc, argv, "u:k:g:P:", opts, NULL)) != -1) {
+        switch (opt) {
+        case 'u':
+            if (parse_user_id_arg(optarg, &user_id) != 0) {
+                fprintf(stderr, "error: invalid --user-id\n");
+                return 1;
+            }
+            have_user_id = 1;
+            break;
+        case 'k':
+            hex = optarg;
+            break;
+        case 'g':
+            grace_ms = (__u32)strtoul(optarg, NULL, 10);
+            break;
+        case 'P':
+            pin_dir = optarg;
+            break;
+        default:
+            return 1;
+        }
+    }
+
+    if (!have_user_id || !hex || parse_hmac_key_hex(hex, key) != 0) {
+        fprintf(stderr, "error: --user-id and --hmac-key are required\n");
+        return 1;
+    }
+
+    map_fd = open_user_map(pin_dir);
+    if (map_fd < 0) {
+        fprintf(stderr, "error: failed to open user_key_map in %s: %s\n", pin_dir, strerror(errno));
+        return 1;
+    }
+
+    if (rotate) {
+        struct timespec now;
+
+        if (bpf_map_lookup_elem(map_fd, &user_id, &state) != 0) {
+            fprintf(stderr, "error: user %u not found\n", user_id);
+            close(map_fd);
+            return 1;
+        }
+        memcpy(state.previous_key, state.active_key, KNOCK_HMAC_KEY_LEN);
+        memcpy(state.active_key, key, KNOCK_HMAC_KEY_LEN);
+        state.key_version += 1;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+            fprintf(stderr, "error: clock_gettime(CLOCK_MONOTONIC) failed\n");
+            close(map_fd);
+            return 1;
+        }
+        state.grace_until_ns = (__u64)now.tv_sec * 1000000000ULL + (__u64)now.tv_nsec + ((__u64)grace_ms * 1000000ULL);
+    } else {
+        if (bpf_map_lookup_elem(map_fd, &user_id, &state) == 0) {
+            fprintf(stderr, "error: user %u already exists\n", user_id);
+            close(map_fd);
+            return 1;
+        }
+        memcpy(state.active_key, key, KNOCK_HMAC_KEY_LEN);
+        state.key_version = 1;
+        state.grace_until_ns = 0;
+    }
+
+    if (bpf_map_update_elem(map_fd, &user_id, &state, BPF_ANY) != 0) {
+        fprintf(stderr, "error: failed to update user %u: %s\n", user_id, strerror(errno));
+        close(map_fd);
+        return 1;
+    }
+
+    close(map_fd);
+    printf("ok: user %u %s\n", user_id, rotate ? "rotated" : "registered");
+    return 0;
+}
+
+static int cmd_revoke_user(int argc, char **argv)
+{
+    static struct option opts[] = {
+        {"user-id", required_argument, NULL, 'u'},
+        {"pin-dir", required_argument, NULL, 'P'},
+        {NULL, 0, NULL, 0},
+    };
+    const char *pin_dir = "/sys/fs/bpf/knock_gate";
+    __u32 user_id = 0;
+    int have_user_id = 0;
+    int map_fd;
+    int opt;
+
+    optind = 1;
+    while ((opt = getopt_long(argc, argv, "u:P:", opts, NULL)) != -1) {
+        switch (opt) {
+        case 'u':
+            if (parse_user_id_arg(optarg, &user_id) != 0) {
+                fprintf(stderr, "error: invalid --user-id\n");
+                return 1;
+            }
+            have_user_id = 1;
+            break;
+        case 'P':
+            pin_dir = optarg;
+            break;
+        default:
+            return 1;
+        }
+    }
+
+    if (!have_user_id) {
+        fprintf(stderr, "error: --user-id is required\n");
+        return 1;
+    }
+
+    map_fd = open_user_map(pin_dir);
+    if (map_fd < 0) {
+        fprintf(stderr, "error: failed to open user_key_map in %s: %s\n", pin_dir, strerror(errno));
+        return 1;
+    }
+
+    if (bpf_map_delete_elem(map_fd, &user_id) != 0) {
+        fprintf(stderr, "error: failed to revoke user %u: %s\n", user_id, strerror(errno));
+        close(map_fd);
+        return 1;
+    }
+
+    close(map_fd);
+    printf("ok: user %u revoked\n", user_id);
+    return 0;
+}
+
+static int cmd_list_users(int argc, char **argv)
+{
+    static struct option opts[] = {
+        {"pin-dir", required_argument, NULL, 'P'},
+        {NULL, 0, NULL, 0},
+    };
+    const char *pin_dir = "/sys/fs/bpf/knock_gate";
+    struct user_key_state state;
+    __u32 key;
+    __u32 next_key;
+    int map_fd;
+    int opt;
+
+    optind = 1;
+    while ((opt = getopt_long(argc, argv, "P:", opts, NULL)) != -1) {
+        if (opt == 'P') {
+            pin_dir = optarg;
+        } else {
+            return 1;
+        }
+    }
+
+    map_fd = open_user_map(pin_dir);
+    if (map_fd < 0) {
+        fprintf(stderr, "error: failed to open user_key_map in %s: %s\n", pin_dir, strerror(errno));
+        return 1;
+    }
+
+    printf("user_id,key_version,grace_until_ns\n");
+    if (bpf_map_get_next_key(map_fd, NULL, &next_key) != 0) {
+        close(map_fd);
+        return 0;
+    }
+
+    while (1) {
+        key = next_key;
+        if (bpf_map_lookup_elem(map_fd, &key, &state) == 0) {
+            printf("%u,%u,%llu\n", key, state.key_version, (unsigned long long)state.grace_until_ns);
+        }
+        if (bpf_map_get_next_key(map_fd, &key, &next_key) != 0) {
+            break;
+        }
+    }
+
+    close(map_fd);
+    return 0;
+}
+
+static int cmd_daemon(int argc, char **argv)
 {
     static struct option long_opts[] = {
         {"ifname", required_argument, NULL, 'i'},
@@ -49,6 +274,7 @@ int main(int argc, char **argv)
         {"bind-window-ms", required_argument, NULL, 'w'},
         {"replay-window-ms", required_argument, NULL, 'r'},
         {"hmac-key", required_argument, NULL, 's'},
+        {"users-file", required_argument, NULL, 'f'},
         {"duration-sec", required_argument, NULL, 'd'},
         {"pin-dir", required_argument, NULL, 'P'},
         {NULL, 0, NULL, 0},
@@ -56,6 +282,9 @@ int main(int argc, char **argv)
 
     const char *ifname = NULL;
     const char *hmac_hex = NULL;
+    const char *users_file = NULL;
+    struct knock_user_record users[KNOCK_MAX_USERS] = {};
+    __u32 user_count = 0;
     struct knock_config cfg = {
         .knock_port = KNOCK_DEFAULT_PORT,
         .protected_count = 0,
@@ -71,9 +300,10 @@ int main(int argc, char **argv)
     };
     struct knock_loader_handle loader_handle;
     int duration_sec = 60;
-
     int opt;
-    while ((opt = getopt_long(argc, argv, "i:o:k:p:t:w:r:s:d:P:", long_opts, NULL)) != -1) {
+
+    optind = 1;
+    while ((opt = getopt_long(argc, argv, "i:o:k:p:t:w:r:s:f:d:P:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'i':
             ifname = optarg;
@@ -120,6 +350,9 @@ int main(int argc, char **argv)
         case 's':
             hmac_hex = optarg;
             break;
+        case 'f':
+            users_file = optarg;
+            break;
         case 'd':
             duration_sec = (int)strtol(optarg, NULL, 10);
             if (duration_sec <= 0) {
@@ -136,14 +369,29 @@ int main(int argc, char **argv)
         }
     }
 
-    if (ifname == NULL || cfg.protected_count == 0 || hmac_hex == NULL) {
+    if (ifname == NULL || cfg.protected_count == 0) {
         usage(argv[0]);
         return 1;
     }
 
-    if (parse_hmac_key_hex(hmac_hex, cfg.hmac_key) != 0) {
+    if (hmac_hex != NULL && parse_hmac_key_hex(hmac_hex, cfg.hmac_key) != 0) {
         fprintf(stderr, "error: --hmac-key must be exactly 64 hex characters\n");
         usage(argv[0]);
+        return 1;
+    }
+
+    if (users_file != NULL) {
+        if (load_users_file(users_file, users, KNOCK_MAX_USERS, &user_count) != 0) {
+            fprintf(stderr, "error: failed to load --users-file (expected lines: user_id,64hex_key)\n");
+            return 1;
+        }
+    } else if (hmac_hex != NULL) {
+        users[0].user_id = 0;
+        memcpy(users[0].hmac_key, cfg.hmac_key, KNOCK_HMAC_KEY_LEN);
+        user_count = 1;
+        fprintf(stderr, "warn: no --users-file provided, using a single fallback user_id=0 from --hmac-key\n");
+    } else {
+        fprintf(stderr, "error: provide --users-file or --hmac-key\n");
         return 1;
     }
 
@@ -152,7 +400,7 @@ int main(int argc, char **argv)
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
-    if (knock_loader_attach(&loader_opts, &cfg, &loader_handle) != 0) {
+    if (knock_loader_attach(&loader_opts, &cfg, users, user_count, &loader_handle) != 0) {
         return 1;
     }
 
@@ -166,7 +414,7 @@ int main(int argc, char **argv)
     printf("Knock timeout: %u ms\n", cfg.timeout_ms);
     printf("Bind window: %u ms\n", cfg.bind_window_ms);
     printf("Replay window: %u ms\n", cfg.replay_window_ms);
-    printf("Signed knock mode selected (HMAC key loaded).\n");
+    printf("Loaded users: %u\n", user_count);
     printf("XDP program attached for %d second(s). Press Ctrl+C to stop early.\n", duration_sec);
 
     {
@@ -180,4 +428,29 @@ int main(int argc, char **argv)
     printf("XDP program detached.\n");
 
     return 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc > 1 && argv[1][0] != '-') {
+        if (strcmp(argv[1], "daemon") == 0) {
+            return cmd_daemon(argc - 1, argv + 1);
+        }
+        if (strcmp(argv[1], "register-user") == 0) {
+            return cmd_register_or_rotate(argc - 1, argv + 1, 0);
+        }
+        if (strcmp(argv[1], "rotate-user-key") == 0) {
+            return cmd_register_or_rotate(argc - 1, argv + 1, 1);
+        }
+        if (strcmp(argv[1], "revoke-user") == 0) {
+            return cmd_revoke_user(argc - 1, argv + 1);
+        }
+        if (strcmp(argv[1], "list-users") == 0) {
+            return cmd_list_users(argc - 1, argv + 1);
+        }
+        usage(argv[0]);
+        return 1;
+    }
+
+    return cmd_daemon(argc, argv);
 }
