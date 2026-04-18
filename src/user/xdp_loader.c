@@ -2,6 +2,7 @@
 #include <net/if.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -10,6 +11,18 @@
 #include <bpf/libbpf.h>
 
 #include "xdp_loader.h"
+
+static void raise_memlock_limit(void)
+{
+    struct rlimit rl = {
+        .rlim_cur = RLIM_INFINITY,
+        .rlim_max = RLIM_INFINITY,
+    };
+
+    if (setrlimit(RLIMIT_MEMLOCK, &rl) != 0) {
+        fprintf(stderr, "warn: failed to raise RLIMIT_MEMLOCK: %s\n", strerror(errno));
+    }
+}
 
 static int ensure_dir(const char *path)
 {
@@ -110,6 +123,9 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
         fprintf(stderr, "error: failed to resolve ifname '%s': %s\n", opts->ifname, strerror(errno));
         return -1;
     }
+
+    libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
+    raise_memlock_limit();
 
     handle->obj = bpf_object__open_file(opts->bpf_obj_path, NULL);
     if (!handle->obj) {
