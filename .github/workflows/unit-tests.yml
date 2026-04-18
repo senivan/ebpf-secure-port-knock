@@ -1,0 +1,47 @@
+name: Unit Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: unit-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            make \
+            gcc \
+            clang \
+            pkg-config \
+            libbpf-dev
+
+      - name: Run userspace unit tests
+        run: |
+          set -euo pipefail
+          make clean
+          make unit-test
+
+      - name: Build userspace binaries
+        run: |
+          set -euo pipefail
+          make build/knockd build/knock-client
