@@ -3,6 +3,15 @@
 
 #include "shared.h"
 
+struct knock_sig_input {
+    __u32 timestamp_sec;
+    __u8 packet_type;
+    __u8 pad[3];
+    __u32 session_id_hi;
+    __u32 session_id_lo;
+    __u32 nonce;
+};
+
 static __inline __u64 knock_rotl64(__u64 x, __u8 b)
 {
     return (x << b) | (x >> (64U - b));
@@ -67,18 +76,22 @@ static __inline __u64 knock_siphash24_16b(__u64 k0, __u64 k1, __u64 m0, __u64 m1
 }
 
 static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
-                                           __u32 timestamp_sec,
-                                           __u32 nonce,
+                                           const struct knock_sig_input *in,
                                            __u32 out[KNOCK_SIGNATURE_WORDS])
 {
     __u64 k0 = knock_load_be64(&key[0]);
     __u64 k1 = knock_load_be64(&key[8]);
     __u64 k2 = knock_load_be64(&key[16]);
     __u64 k3 = knock_load_be64(&key[24]);
-    __u64 m0 = ((__u64)timestamp_sec << 32) | (__u64)nonce;
-    __u64 m1 = ((__u64)KNOCK_MAGIC << 32) | 0x53474e31ULL;
+    __u64 m0 = ((__u64)in->timestamp_sec << 32) | (__u64)in->nonce;
+    __u64 m1 = ((__u64)KNOCK_MAGIC << 32) |
+               ((__u64)in->packet_type << 24) |
+               ((in->session_id_hi >> 8) & 0x00ffffffU);
+    __u64 m2 = ((__u64)(in->session_id_hi & 0x000000ffU) << 56) |
+               ((__u64)in->session_id_lo << 24) |
+               0x0053474e31ULL;
     __u64 h0 = knock_siphash24_16b(k0 ^ k2, k1 ^ k3, m0, m1, 0x0101010101010101ULL);
-    __u64 h1 = knock_siphash24_16b(k0 ^ ~k2, k1 ^ ~k3, m1, m0, 0x0202020202020202ULL);
+    __u64 h1 = knock_siphash24_16b(k0 ^ ~k2, k1 ^ ~k3, m2, m0, 0x0202020202020202ULL);
 
     out[0] = (__u32)(h0 >> 32);
     out[1] = (__u32)(h0 & 0xffffffffU);

@@ -18,8 +18,22 @@ struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 4096);
     __type(key, __u32);
-    __type(value, struct auth_state);
-} auth_map SEC(".maps");
+    __type(value, struct pending_auth_state);
+} pending_auth_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 32768);
+    __type(key, struct flow_key);
+    __type(value, struct active_session_state);
+} active_session_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 32768);
+    __type(key, struct session_lookup_key);
+    __type(value, struct flow_key);
+} session_index_map SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -78,10 +92,18 @@ static __always_inline bool knock_is_valid(const struct knock_config *cfg,
     __u32 now_sec = (__u32)(now_ns / 1000000000ULL);
     __u32 ts_sec = bpf_ntohl(pkt->timestamp_sec);
     __u32 nonce = bpf_ntohl(pkt->nonce);
+    __u8 packet_type = pkt->packet_type;
+    __u32 session_id_hi = bpf_ntohl(pkt->session_id_hi);
+    __u32 session_id_lo = bpf_ntohl(pkt->session_id_lo);
+    struct knock_sig_input in = {};
     __u32 sig[KNOCK_SIGNATURE_WORDS];
     __u32 i;
 
     if (pkt->magic != bpf_htonl(KNOCK_MAGIC)) {
+        return false;
+    }
+
+    if (packet_type != KNOCK_PKT_AUTH && packet_type != KNOCK_PKT_DEAUTH) {
         return false;
     }
 
@@ -92,7 +114,13 @@ static __always_inline bool knock_is_valid(const struct knock_config *cfg,
         return false;
     }
 
-    knock_signature_words(cfg->hmac_key, ts_sec, nonce, sig);
+    in.timestamp_sec = ts_sec;
+    in.packet_type = packet_type;
+    in.session_id_hi = session_id_hi;
+    in.session_id_lo = session_id_lo;
+    in.nonce = nonce;
+
+    knock_signature_words(cfg->hmac_key, &in, sig);
 #pragma clang loop unroll(full)
     for (i = 0; i < KNOCK_SIGNATURE_WORDS; i++) {
         if (sig[i] != bpf_ntohl(pkt->signature[i])) {
@@ -112,10 +140,16 @@ int port_knock_xdp(struct xdp_md *ctx)
     struct iphdr *iph;
     struct tcphdr *tcph;
     struct knock_packet *kpkt;
-    struct auth_state *auth;
-    struct auth_state new_auth = {};
+    struct active_session_state *sess;
+    struct pending_auth_state *pending;
+    struct pending_auth_state new_pending = {};
+    struct active_session_state new_sess = {};
+    struct session_lookup_key lookup_key = {};
+    struct flow_key flow = {};
+    struct flow_key *bound_flow;
     struct knock_config *cfg;
     __u16 dst_port;
+    __u16 src_port;
     __u64 now_ns;
     __u32 key = 0;
     struct debug_counters *stats;
@@ -162,13 +196,24 @@ int port_knock_xdp(struct xdp_md *ctx)
     }
 
     dst_port = bpf_ntohs(tcph->dest);
+    src_port = bpf_ntohs(tcph->source);
     now_ns = bpf_ktime_get_ns();
+
+    flow.src_ip = iph->saddr;
+    flow.dst_ip = iph->daddr;
+    flow.src_port = src_port;
+    flow.dst_port = dst_port;
+    flow.l4_proto = iph->protocol;
 
     if (dst_port == cfg->knock_port) {
         __u32 nonce_host;
+        __u32 session_id_hi;
+        __u32 session_id_lo;
+        __u8 packet_type;
         __u64 replay_window_ns;
-        struct replay_nonce_key replay_key;
+        struct replay_nonce_key replay_key = {};
         struct replay_nonce_state replay_state = {};
+        struct session_lookup_key deauth_key = {};
         struct replay_nonce_state *seen;
 
         bump(stats ? &stats->knock_seen : NULL);
@@ -179,11 +224,17 @@ int port_knock_xdp(struct xdp_md *ctx)
         }
 
         nonce_host = bpf_ntohl(kpkt->nonce);
+        packet_type = kpkt->packet_type;
+        session_id_hi = bpf_ntohl(kpkt->session_id_hi);
+        session_id_lo = bpf_ntohl(kpkt->session_id_lo);
 
         if (snap) {
             snap->magic = kpkt->magic;
             snap->timestamp_sec = kpkt->timestamp_sec;
             snap->nonce = kpkt->nonce;
+            snap->packet_type = (__u32)packet_type;
+            snap->session_id_hi = kpkt->session_id_hi;
+            snap->session_id_lo = kpkt->session_id_lo;
             snap->sig0 = kpkt->signature[0];
             snap->sig1 = kpkt->signature[1];
             snap->sig2 = kpkt->signature[2];
@@ -193,6 +244,9 @@ int port_knock_xdp(struct xdp_md *ctx)
         if (knock_is_valid(cfg, kpkt)) {
             replay_key.src_ip = iph->saddr;
             replay_key.nonce = nonce_host;
+            replay_key.packet_type = packet_type;
+            replay_key.session_id_hi = session_id_hi;
+            replay_key.session_id_lo = session_id_lo;
 
             seen = bpf_map_lookup_elem(&replay_nonce_map, &replay_key);
             if (seen) {
@@ -203,16 +257,32 @@ int port_knock_xdp(struct xdp_md *ctx)
                 bpf_map_delete_elem(&replay_nonce_map, &replay_key);
             }
 
-            replay_window_ns = (__u64)cfg->timeout_ms * 1000000ULL;
+            replay_window_ns = (__u64)cfg->replay_window_ms * 1000000ULL;
             if (replay_window_ns < ((__u64)KNOCK_MAX_CLOCK_SKEW_SEC * 1000000000ULL)) {
                 replay_window_ns = (__u64)KNOCK_MAX_CLOCK_SKEW_SEC * 1000000000ULL;
             }
             replay_state.expires_at_ns = now_ns + replay_window_ns;
             bpf_map_update_elem(&replay_nonce_map, &replay_key, &replay_state, BPF_ANY);
 
-            new_auth.expires_at_ns = now_ns + ((__u64)cfg->timeout_ms * 1000000ULL);
-            bpf_map_update_elem(&auth_map, &iph->saddr, &new_auth, BPF_ANY);
-            bump(stats ? &stats->knock_valid : NULL);
+            if (packet_type == KNOCK_PKT_AUTH) {
+                new_pending.session_id_hi = session_id_hi;
+                new_pending.session_id_lo = session_id_lo;
+                new_pending.expires_at_ns = now_ns + ((__u64)cfg->bind_window_ms * 1000000ULL);
+                bpf_map_update_elem(&pending_auth_map, &iph->saddr, &new_pending, BPF_ANY);
+                bump(stats ? &stats->knock_valid : NULL);
+            } else {
+                deauth_key.src_ip = iph->saddr;
+                deauth_key.session_id_hi = session_id_hi;
+                deauth_key.session_id_lo = session_id_lo;
+                bound_flow = bpf_map_lookup_elem(&session_index_map, &deauth_key);
+                if (!bound_flow) {
+                    bump(stats ? &stats->deauth_miss : NULL);
+                    return XDP_DROP;
+                }
+                bpf_map_delete_elem(&active_session_map, bound_flow);
+                bpf_map_delete_elem(&session_index_map, &deauth_key);
+                bump(stats ? &stats->knock_deauth : NULL);
+            }
         }
 
         /* Knock channel should not expose any service behavior. */
@@ -223,13 +293,41 @@ int port_knock_xdp(struct xdp_md *ctx)
         return XDP_PASS;
     }
 
-    auth = bpf_map_lookup_elem(&auth_map, &iph->saddr);
-    if (!auth) {
-        bump(stats ? &stats->protected_drop : NULL);
-        return XDP_DROP;
+    sess = bpf_map_lookup_elem(&active_session_map, &flow);
+    if (!sess) {
+        pending = bpf_map_lookup_elem(&pending_auth_map, &iph->saddr);
+        if (!pending) {
+            bump(stats ? &stats->protected_drop : NULL);
+            return XDP_DROP;
+        }
+        if (pending->expires_at_ns < now_ns) {
+            bpf_map_delete_elem(&pending_auth_map, &iph->saddr);
+            bump(stats ? &stats->bind_drop : NULL);
+            bump(stats ? &stats->protected_drop : NULL);
+            return XDP_DROP;
+        }
+
+        new_sess.session_id_hi = pending->session_id_hi;
+        new_sess.session_id_lo = pending->session_id_lo;
+        new_sess.expires_at_ns = now_ns + ((__u64)cfg->timeout_ms * 1000000ULL);
+        bpf_map_update_elem(&active_session_map, &flow, &new_sess, BPF_ANY);
+
+        lookup_key.src_ip = iph->saddr;
+        lookup_key.session_id_hi = pending->session_id_hi;
+        lookup_key.session_id_lo = pending->session_id_lo;
+        bpf_map_update_elem(&session_index_map, &lookup_key, &flow, BPF_ANY);
+        bpf_map_delete_elem(&pending_auth_map, &iph->saddr);
+
+        bump(stats ? &stats->protected_pass : NULL);
+        return XDP_PASS;
     }
-    if (auth->expires_at_ns < now_ns) {
-        bpf_map_delete_elem(&auth_map, &iph->saddr);
+    if (sess->expires_at_ns < now_ns) {
+        lookup_key.src_ip = iph->saddr;
+        lookup_key.session_id_hi = sess->session_id_hi;
+        lookup_key.session_id_lo = sess->session_id_lo;
+        bpf_map_delete_elem(&session_index_map, &lookup_key);
+        bpf_map_delete_elem(&active_session_map, &flow);
+        bump(stats ? &stats->session_timeout_drop : NULL);
         bump(stats ? &stats->protected_drop : NULL);
         return XDP_DROP;
     }

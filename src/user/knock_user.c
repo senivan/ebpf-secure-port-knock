@@ -28,10 +28,14 @@ static void usage(const char *prog)
             "  --bpf-obj <path>             eBPF object path (default: build/knock_kern.bpf.o)\n"
             "  --knock-port <port>          Knock packet destination port (default: %u)\n"
             "  --protect <p1,p2,...>        Comma-separated protected service ports\n"
-            "  --timeout-ms <ms>            Authorization lifetime (default: %u)\n",
+            "  --timeout-ms <ms>            Session lifetime after bind (default: %u)\n"
+            "  --bind-window-ms <ms>        Time to bind first protected flow (default: %u)\n"
+            "  --replay-window-ms <ms>      Replay reject window for control packets (default: %u)\n",
             prog,
             KNOCK_DEFAULT_PORT,
-            KNOCK_DEFAULT_TIMEOUT_MS);
+            KNOCK_DEFAULT_TIMEOUT_MS,
+            KNOCK_DEFAULT_BIND_WINDOW_MS,
+            KNOCK_DEFAULT_REPLAY_WINDOW_MS);
 }
 
 int main(int argc, char **argv)
@@ -42,6 +46,8 @@ int main(int argc, char **argv)
         {"knock-port", required_argument, NULL, 'k'},
         {"protect", required_argument, NULL, 'p'},
         {"timeout-ms", required_argument, NULL, 't'},
+        {"bind-window-ms", required_argument, NULL, 'w'},
+        {"replay-window-ms", required_argument, NULL, 'r'},
         {"hmac-key", required_argument, NULL, 's'},
         {"duration-sec", required_argument, NULL, 'd'},
         {"pin-dir", required_argument, NULL, 'P'},
@@ -54,6 +60,8 @@ int main(int argc, char **argv)
         .knock_port = KNOCK_DEFAULT_PORT,
         .protected_count = 0,
         .timeout_ms = KNOCK_DEFAULT_TIMEOUT_MS,
+        .bind_window_ms = KNOCK_DEFAULT_BIND_WINDOW_MS,
+        .replay_window_ms = KNOCK_DEFAULT_REPLAY_WINDOW_MS,
     };
     struct knock_loader_opts loader_opts = {
         .ifname = NULL,
@@ -65,7 +73,7 @@ int main(int argc, char **argv)
     int duration_sec = 60;
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "i:o:k:p:t:s:d:P:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "i:o:k:p:t:w:r:s:d:P:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'i':
             ifname = optarg;
@@ -92,6 +100,20 @@ int main(int argc, char **argv)
             cfg.timeout_ms = (__u32)strtoul(optarg, NULL, 10);
             if (cfg.timeout_ms == 0) {
                 fprintf(stderr, "error: --timeout-ms must be > 0\n");
+                return 1;
+            }
+            break;
+        case 'w':
+            cfg.bind_window_ms = (__u32)strtoul(optarg, NULL, 10);
+            if (cfg.bind_window_ms == 0) {
+                fprintf(stderr, "error: --bind-window-ms must be > 0\n");
+                return 1;
+            }
+            break;
+        case 'r':
+            cfg.replay_window_ms = (__u32)strtoul(optarg, NULL, 10);
+            if (cfg.replay_window_ms == 0) {
+                fprintf(stderr, "error: --replay-window-ms must be > 0\n");
                 return 1;
             }
             break;
@@ -142,6 +164,8 @@ int main(int argc, char **argv)
     }
     printf("\n");
     printf("Knock timeout: %u ms\n", cfg.timeout_ms);
+    printf("Bind window: %u ms\n", cfg.bind_window_ms);
+    printf("Replay window: %u ms\n", cfg.replay_window_ms);
     printf("Signed knock mode selected (HMAC key loaded).\n");
     printf("XDP program attached for %d second(s). Press Ctrl+C to stop early.\n", duration_sec);
 

@@ -13,11 +13,20 @@
 #define KNOCK_MAGIC 0x4b4e4f43U /* "KNOC" */
 #define KNOCK_DEFAULT_PORT 40000U
 #define KNOCK_MAX_CLOCK_SKEW_SEC 30U
+#define KNOCK_DEFAULT_BIND_WINDOW_MS 3000U
+#define KNOCK_DEFAULT_REPLAY_WINDOW_MS 30000U
+
+#define KNOCK_PKT_AUTH 1U
+#define KNOCK_PKT_DEAUTH 2U
 
 struct knock_packet {
     __u32 magic;
     __u32 timestamp_sec;
     __u32 nonce;
+    __u8 packet_type;
+    __u8 reserved[3];
+    __u32 session_id_hi;
+    __u32 session_id_lo;
     __u32 signature[KNOCK_SIGNATURE_WORDS];
 } __attribute__((packed));
 
@@ -26,16 +35,45 @@ struct knock_config {
     __u16 protected_count;
     __u16 protected_ports[KNOCK_MAX_PROTECTED_PORTS];
     __u32 timeout_ms;
+    __u32 bind_window_ms;
+    __u32 replay_window_ms;
     __u8 hmac_key[KNOCK_HMAC_KEY_LEN];
 };
 
-struct auth_state {
+struct flow_key {
+    __u32 src_ip;
+    __u32 dst_ip;
+    __u16 src_port;
+    __u16 dst_port;
+    __u8 l4_proto;
+    __u8 pad[3];
+};
+
+struct pending_auth_state {
+    __u32 session_id_hi;
+    __u32 session_id_lo;
+    __u64 expires_at_ns;
+};
+
+struct active_session_state {
+    __u32 session_id_hi;
+    __u32 session_id_lo;
     __u64 expires_at_ns;
 };
 
 struct replay_nonce_key {
     __u32 src_ip;
     __u32 nonce;
+    __u8 packet_type;
+    __u8 pad[3];
+    __u32 session_id_hi;
+    __u32 session_id_lo;
+};
+
+struct session_lookup_key {
+    __u32 src_ip;
+    __u32 session_id_hi;
+    __u32 session_id_lo;
 };
 
 struct replay_nonce_state {
@@ -46,7 +84,11 @@ struct debug_counters {
     __u64 knock_seen;
     __u64 knock_short;
     __u64 knock_valid;
+    __u64 knock_deauth;
     __u64 replay_drop;
+    __u64 bind_drop;
+    __u64 session_timeout_drop;
+    __u64 deauth_miss;
     __u64 protected_drop;
     __u64 protected_pass;
 };
@@ -55,6 +97,9 @@ struct debug_knock_snapshot {
     __u32 magic;
     __u32 timestamp_sec;
     __u32 nonce;
+    __u32 packet_type;
+    __u32 session_id_hi;
+    __u32 session_id_lo;
     __u32 sig0;
     __u32 sig1;
     __u32 sig2;

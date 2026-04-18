@@ -28,12 +28,16 @@ static int pin_map_fd(int map_fd, const char *path)
 static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
 {
     int config_fd;
-    int auth_fd;
+    int pending_fd;
+    int active_fd;
+    int session_idx_fd;
     int replay_fd;
     int stats_fd;
     int snap_fd;
     char config_pin[256];
-    char auth_pin[256];
+    char pending_pin[256];
+    char active_pin[256];
+    char session_idx_pin[256];
     char replay_pin[256];
     char stats_pin[256];
     char snap_pin[256];
@@ -43,13 +47,17 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     }
 
     config_fd = bpf_object__find_map_fd_by_name(obj, "config_map");
-    auth_fd = bpf_object__find_map_fd_by_name(obj, "auth_map");
+    pending_fd = bpf_object__find_map_fd_by_name(obj, "pending_auth_map");
+    active_fd = bpf_object__find_map_fd_by_name(obj, "active_session_map");
+    session_idx_fd = bpf_object__find_map_fd_by_name(obj, "session_index_map");
     replay_fd = bpf_object__find_map_fd_by_name(obj, "replay_nonce_map");
     stats_fd = bpf_object__find_map_fd_by_name(obj, "stats_map");
     snap_fd = bpf_object__find_map_fd_by_name(obj, "debug_knock_map");
 
     snprintf(config_pin, sizeof(config_pin), "%s/config_map", pin_dir);
-    snprintf(auth_pin, sizeof(auth_pin), "%s/auth_map", pin_dir);
+    snprintf(pending_pin, sizeof(pending_pin), "%s/pending_auth_map", pin_dir);
+    snprintf(active_pin, sizeof(active_pin), "%s/active_session_map", pin_dir);
+    snprintf(session_idx_pin, sizeof(session_idx_pin), "%s/session_index_map", pin_dir);
     snprintf(replay_pin, sizeof(replay_pin), "%s/replay_nonce_map", pin_dir);
     snprintf(stats_pin, sizeof(stats_pin), "%s/stats_map", pin_dir);
     snprintf(snap_pin, sizeof(snap_pin), "%s/debug_knock_map", pin_dir);
@@ -57,8 +65,14 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     if (config_fd >= 0 && pin_map_fd(config_fd, config_pin) != 0) {
         fprintf(stderr, "warn: failed to pin config_map at %s: %s\n", config_pin, strerror(errno));
     }
-    if (auth_fd >= 0 && pin_map_fd(auth_fd, auth_pin) != 0) {
-        fprintf(stderr, "warn: failed to pin auth_map at %s: %s\n", auth_pin, strerror(errno));
+    if (pending_fd >= 0 && pin_map_fd(pending_fd, pending_pin) != 0) {
+        fprintf(stderr, "warn: failed to pin pending_auth_map at %s: %s\n", pending_pin, strerror(errno));
+    }
+    if (active_fd >= 0 && pin_map_fd(active_fd, active_pin) != 0) {
+        fprintf(stderr, "warn: failed to pin active_session_map at %s: %s\n", active_pin, strerror(errno));
+    }
+    if (session_idx_fd >= 0 && pin_map_fd(session_idx_fd, session_idx_pin) != 0) {
+        fprintf(stderr, "warn: failed to pin session_index_map at %s: %s\n", session_idx_pin, strerror(errno));
     }
     if (replay_fd >= 0 && pin_map_fd(replay_fd, replay_pin) != 0) {
         fprintf(stderr, "warn: failed to pin replay_nonce_map at %s: %s\n", replay_pin, strerror(errno));

@@ -52,6 +52,7 @@ run: all
 	sudo ./$(USER_BIN) --ifname $(IFACE) --hmac-key $(HMAC_KEY) --protect $(PROTECT) \
 		$(if $(KNOCK_PORT),--knock-port $(KNOCK_PORT),) \
 		$(if $(TIMEOUT_MS),--timeout-ms $(TIMEOUT_MS),) \
+		$(if $(REPLAY_WINDOW_MS),--replay-window-ms $(REPLAY_WINDOW_MS),) \
 		$(if $(DURATION_SEC),--duration-sec $(DURATION_SEC),)
 
 test: all

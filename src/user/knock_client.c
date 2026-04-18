@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <getopt.h>
+#include <inttypes.h>
 #include <linux/if_ether.h>
 #include <net/if.h>
 #include <net/if_arp.h>
@@ -12,6 +13,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/random.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -26,9 +28,53 @@ static void usage(const char *prog)
             "Usage: %s --ifname <iface> --src-ip <ip> --dst-ip <ip> --dst-port <port> --hmac-key <64-hex> [options]\n"
             "Options:\n"
             "  --src-port <port>            Source TCP port (default: 50000)\n"
+            "  --packet-type <auth|deauth>  Control packet type (default: auth)\n"
+            "  --session-id <u64>           Session id (required for deauth, random for auth)\n"
             "  --nonce <u32>                Explicit nonce (default: random)\n"
             "  --timestamp-sec <u32>        Explicit monotonic timestamp (default: CLOCK_MONOTONIC)\n",
             prog);
+}
+
+static int parse_packet_type(const char *s, __u8 *packet_type)
+{
+    if (strcmp(s, "auth") == 0) {
+        *packet_type = KNOCK_PKT_AUTH;
+        return 0;
+    }
+    if (strcmp(s, "deauth") == 0) {
+        *packet_type = KNOCK_PKT_DEAUTH;
+        return 0;
+    }
+    return -1;
+}
+
+static int random_fill(void *buf, size_t len)
+{
+    __u8 *p = (__u8 *)buf;
+    size_t done = 0;
+
+    while (done < len) {
+        ssize_t n = getrandom(p + done, len - done, 0);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        done += (size_t)n;
+    }
+
+    return 0;
+}
+
+static int random_u32(__u32 *out)
+{
+    return random_fill(out, sizeof(*out));
+}
+
+static int random_u64(__u64 *out)
+{
+    return random_fill(out, sizeof(*out));
 }
 
 
@@ -40,6 +86,8 @@ int main(int argc, char **argv)
         {"dst-ip", required_argument, NULL, 'd'},
         {"dst-port", required_argument, NULL, 'p'},
         {"src-port", required_argument, NULL, 'q'},
+        {"packet-type", required_argument, NULL, 'm'},
+        {"session-id", required_argument, NULL, 'x'},
         {"hmac-key", required_argument, NULL, 'k'},
         {"nonce", required_argument, NULL, 'n'},
         {"timestamp-sec", required_argument, NULL, 't'},
@@ -52,11 +100,15 @@ int main(int argc, char **argv)
     const char *hmac_hex = NULL;
     uint16_t src_port = 50000;
     uint16_t dst_port = KNOCK_DEFAULT_PORT;
+    __u8 packet_type = KNOCK_PKT_AUTH;
+    __u64 session_id = 0;
     uint32_t nonce = 0;
     uint32_t ts = 0;
+    int have_session_id = 0;
     int have_nonce = 0;
     int have_ts = 0;
     __u8 key[KNOCK_HMAC_KEY_LEN] = {0};
+    struct knock_sig_input sig_in = {};
     struct knock_packet kpkt;
     __u32 sig[KNOCK_SIGNATURE_WORDS];
     uint8_t frame[sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr) + sizeof(struct knock_packet)] = {0};
@@ -71,7 +123,7 @@ int main(int argc, char **argv)
     int opt;
     struct ifreq ifr;
 
-    while ((opt = getopt_long(argc, argv, "i:s:d:p:q:k:n:t:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "i:s:d:p:q:m:x:k:n:t:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'i':
             ifname = optarg;
@@ -98,6 +150,23 @@ int main(int argc, char **argv)
                 return 1;
             }
             src_port = (uint16_t)v;
+            break;
+        }
+        case 'm':
+            if (parse_packet_type(optarg, &packet_type) != 0) {
+                fprintf(stderr, "error: --packet-type must be auth or deauth\n");
+                return 1;
+            }
+            break;
+        case 'x': {
+            char *end = NULL;
+            unsigned long long v = strtoull(optarg, &end, 0);
+            if (!end || *end != '\0') {
+                fprintf(stderr, "error: invalid --session-id\n");
+                return 1;
+            }
+            session_id = (__u64)v;
+            have_session_id = 1;
             break;
         }
         case 'k':
@@ -155,15 +224,30 @@ int main(int argc, char **argv)
         }
         ts = (uint32_t)now.tv_sec;
     }
+    if (packet_type == KNOCK_PKT_DEAUTH && !have_session_id) {
+        fprintf(stderr, "error: --session-id is required for --packet-type deauth\n");
+        return 1;
+    }
     if (!have_nonce) {
-        srand((unsigned int)(time(NULL) ^ getpid()));
-        nonce = (uint32_t)rand();
+        if (random_u32(&nonce) != 0) {
+            fprintf(stderr, "error: failed to generate random nonce: %s\n", strerror(errno));
+            return 1;
+        }
+    }
+    if (!have_session_id) {
+        if (random_u64(&session_id) != 0) {
+            fprintf(stderr, "error: failed to generate random session id: %s\n", strerror(errno));
+            return 1;
+        }
     }
 
     memset(&kpkt, 0, sizeof(kpkt));
     kpkt.magic = htonl(KNOCK_MAGIC);
     kpkt.timestamp_sec = htonl(ts);
     kpkt.nonce = htonl(nonce);
+    kpkt.packet_type = packet_type;
+    kpkt.session_id_hi = htonl((__u32)(session_id >> 32));
+    kpkt.session_id_lo = htonl((__u32)(session_id & 0xffffffffULL));
 
     {
         struct in_addr src_addr;
@@ -174,7 +258,12 @@ int main(int argc, char **argv)
             return 1;
         }
 
-        knock_signature_words(key, ts, nonce, sig);
+        sig_in.timestamp_sec = ts;
+        sig_in.packet_type = packet_type;
+        sig_in.session_id_hi = (__u32)(session_id >> 32);
+        sig_in.session_id_lo = (__u32)(session_id & 0xffffffffULL);
+        sig_in.nonce = nonce;
+        knock_signature_words(key, &sig_in, sig);
 
         for (size_t i = 0; i < KNOCK_SIGNATURE_WORDS; i++) {
             kpkt.signature[i] = htonl(sig[i]);
@@ -188,7 +277,14 @@ int main(int argc, char **argv)
         iph->ihl = 5;
         iph->tos = 0;
         iph->tot_len = htons((uint16_t)(sizeof(struct iphdr) + sizeof(struct tcphdr) + sizeof(struct knock_packet)));
-        iph->id = htons((uint16_t)(rand() & 0xffffU));
+        {
+            __u32 ipid = 0;
+            if (random_u32(&ipid) != 0) {
+                fprintf(stderr, "error: failed to generate IPv4 ID: %s\n", strerror(errno));
+                return 1;
+            }
+            iph->id = htons((uint16_t)(ipid & 0xffffU));
+        }
         iph->frag_off = htons(0x4000);
         iph->ttl = 64;
         iph->protocol = IPPROTO_TCP;
@@ -228,8 +324,15 @@ int main(int argc, char **argv)
     }
 
     close(fd);
-    printf("Knock frame sent on %s to %s:%u from %s:%u\n", ifname, dst_ip_str, dst_port, src_ip_str, src_port);
-    printf("timestamp=%u nonce=%u sig=%08x:%08x:%08x:%08x\n",
-           ts, nonce, sig[0], sig[1], sig[2], sig[3]);
+        printf("Knock frame sent on %s to %s:%u from %s:%u\n", ifname, dst_ip_str, dst_port, src_ip_str, src_port);
+        printf("type=%s timestamp=%u session_id=%" PRIu64 " nonce=%u sig=%08x:%08x:%08x:%08x\n",
+               packet_type == KNOCK_PKT_DEAUTH ? "deauth" : "auth",
+            ts,
+            (uint64_t)session_id,
+            nonce,
+            sig[0],
+            sig[1],
+            sig[2],
+            sig[3]);
     return 0;
 }
