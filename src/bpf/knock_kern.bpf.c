@@ -147,6 +147,7 @@ static __always_inline bool knock_is_valid_with_key(const __u8 key[KNOCK_HMAC_KE
     __u16 bind_src_port = bpf_ntohs(pkt->bind_src_port);
     __u16 bind_dst_port = bpf_ntohs(pkt->bind_dst_port);
     struct knock_sig_input in = {};
+    __u32 diff = 0;
     __u32 sig[KNOCK_SIGNATURE_WORDS];
     __u32 i;
 
@@ -180,12 +181,10 @@ static __always_inline bool knock_is_valid_with_key(const __u8 key[KNOCK_HMAC_KE
     knock_signature_words(key, &in, sig);
 #pragma clang loop unroll(full)
     for (i = 0; i < KNOCK_SIGNATURE_WORDS; i++) {
-        if (sig[i] != bpf_ntohl(pkt->signature[i])) {
-            return false;
-        }
+        diff |= sig[i] ^ bpf_ntohl(pkt->signature[i]);
     }
 
-    return true;
+    return diff == 0;
 }
 
 static __always_inline __u32 knock_user_id_from_session_hi(__u32 session_id_hi)
