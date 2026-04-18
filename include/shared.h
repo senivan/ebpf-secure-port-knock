@@ -108,6 +108,7 @@ struct debug_counters {
     __u64 unknown_user;
     __u64 key_mismatch;
     __u64 grace_key_used;
+    __u64 map_update_fail;
     __u64 protected_drop;
     __u64 protected_pass;
 };
