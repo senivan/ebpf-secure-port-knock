@@ -5,12 +5,12 @@ This repository is a starter for a stealth gate model:
 - Device appears closed to unauthorized clients.
 - A client sends one special TCP packet to a dedicated knock port.
 - The knock includes a keyed signature over packet metadata.
-- If signature is valid, that source IP is temporarily allowed to reach protected service ports.
+- If signature is valid for a registered user, that source IP is temporarily allowed to reach protected service ports.
 
 ## Project layout
 
-- `src/bpf/knock_kern.bpf.c`: kernel-side XDP gate with signed knock validation and per-source auth map
-- `src/user/knock_user.c`: CLI/orchestration entrypoint for attach lifecycle
+- `src/bpf/knock_kern.bpf.c`: kernel-side XDP gate with per-user signed knock validation and auth maps
+- `src/user/knock_user.c`: daemon and admin CLI (attach lifecycle, user register/rotate/revoke/list)
 - `src/user/xdp_loader.c`: libbpf loader + map pinning + XDP attach/detach module
 - `src/user/knock_client.c`: knock frame sender entrypoint
 - `src/user/cli_common.c`: shared CLI parsing helpers (HMAC key, port lists)
@@ -34,7 +34,7 @@ This repository is a starter for a stealth gate model:
 make all
 make run \
 	IFACE=eth0 \
-	HMAC_KEY=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
+	USERS_FILE=/etc/knock/users.csv \
 	PROTECT=22,443 \
 	KNOCK_PORT=40000 \
 	TIMEOUT_MS=5000 \
@@ -49,6 +49,7 @@ sudo ./build/knock-client \
 	--src-ip 192.0.2.10 \
 	--dst-ip 192.0.2.20 \
 	--dst-port 40000 \
+	--user-id 100 \
 	--hmac-key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
 ```
 
@@ -66,17 +67,61 @@ Implemented in the starter XDP program:
 
 - IPv4/TCP packet parsing.
 - Knock packet extraction on `knock_port`.
-- Signature check against configured key and payload fields.
+- Signature check against per-user key selected from encoded user ID in session ID.
 - Temporary source-IP authorization map with timeout.
+- User-key map with rotation support (active key + previous key grace window).
 - Drop-by-default behavior for protected ports when source is unauthorized.
 
 Implemented in userspace:
 
-- `build/knockd`: libbpf loader that loads object, populates `config_map`, attaches XDP, and detaches on timeout/signal.
-- `build/knock-client`: raw packet sender for signed knock packets (default timestamp source is `CLOCK_MONOTONIC` to match kernel-side freshness checks).
+- `build/knockd`: daemon mode loader plus user admin commands (`register-user`, `rotate-user-key`, `revoke-user`, `list-users`).
+- `build/knock-client`: raw packet sender for signed knock packets; auth packets require `--user-id` unless explicit `--session-id` is provided.
 - `scripts/test_e2e.sh`: smoke test that checks blocked-before-knock and allowed-after-knock behavior on loopback.
 - `scripts/test_e2e_netns.sh`: network-namespace scenario with separate client and attacker hosts over a virtual L2 topology.
 - `scripts/test_e2e_netns_ssh.sh`: network-namespace functional scenario using real SSH client/server flow through the protected port.
+
+## Per-user registration
+
+User file format:
+
+```text
+# user_id,hmac_key_hex
+100,00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+101,aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899
+```
+
+Run daemon mode directly:
+
+```bash
+sudo ./build/knockd daemon \
+	--ifname eth0 \
+	--users-file /etc/knock/users.csv \
+	--protect 22,443
+
+# optional compatibility fallback: single registered user_id 0 from one key
+sudo ./build/knockd daemon \
+	--ifname eth0 \
+	--hmac-key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
+	--protect 22,443
+```
+
+## Runtime user key management
+
+All admin commands operate on pinned maps (default `/sys/fs/bpf/knock_gate`) and do not require daemon restart.
+
+```bash
+# register a new user
+sudo ./build/knockd register-user --user-id 102 --hmac-key <64hex>
+
+# rotate key with optional grace window
+sudo ./build/knockd rotate-user-key --user-id 102 --hmac-key <new64hex> --grace-ms 5000
+
+# revoke user
+sudo ./build/knockd revoke-user --user-id 102
+
+# list users
+sudo ./build/knockd list-users
+```
 
 <!-- ## next milestones
 
