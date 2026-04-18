@@ -5,6 +5,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <bpf/bpf.h>
@@ -46,6 +47,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     int session_idx_fd;
     int replay_fd;
     int stats_fd;
+    int time_offset_fd;
     int snap_fd;
     int user_key_fd;
     char config_pin[256];
@@ -54,6 +56,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     char session_idx_pin[256];
     char replay_pin[256];
     char stats_pin[256];
+    char time_offset_pin[256];
     char snap_pin[256];
     char user_key_pin[256];
 
@@ -67,6 +70,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     session_idx_fd = bpf_object__find_map_fd_by_name(obj, "session_index_map");
     replay_fd = bpf_object__find_map_fd_by_name(obj, "replay_nonce_map");
     stats_fd = bpf_object__find_map_fd_by_name(obj, "stats_map");
+    time_offset_fd = bpf_object__find_map_fd_by_name(obj, "time_offset_map");
     snap_fd = bpf_object__find_map_fd_by_name(obj, "debug_knock_map");
     user_key_fd = bpf_object__find_map_fd_by_name(obj, "user_key_map");
 
@@ -76,6 +80,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     snprintf(session_idx_pin, sizeof(session_idx_pin), "%s/session_index_map", pin_dir);
     snprintf(replay_pin, sizeof(replay_pin), "%s/replay_nonce_map", pin_dir);
     snprintf(stats_pin, sizeof(stats_pin), "%s/stats_map", pin_dir);
+    snprintf(time_offset_pin, sizeof(time_offset_pin), "%s/time_offset_map", pin_dir);
     snprintf(snap_pin, sizeof(snap_pin), "%s/debug_knock_map", pin_dir);
     snprintf(user_key_pin, sizeof(user_key_pin), "%s/user_key_map", pin_dir);
 
@@ -97,6 +102,9 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     if (stats_fd >= 0 && pin_map_fd(stats_fd, stats_pin) != 0) {
         fprintf(stderr, "warn: failed to pin stats_map at %s: %s\n", stats_pin, strerror(errno));
     }
+    if (time_offset_fd >= 0 && pin_map_fd(time_offset_fd, time_offset_pin) != 0) {
+        fprintf(stderr, "warn: failed to pin time_offset_map at %s: %s\n", time_offset_pin, strerror(errno));
+    }
     if (snap_fd >= 0 && pin_map_fd(snap_fd, snap_pin) != 0) {
         fprintf(stderr, "warn: failed to pin debug_knock_map at %s: %s\n", snap_pin, strerror(errno));
     }
@@ -112,6 +120,9 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
                         struct knock_loader_handle *handle)
 {
     struct bpf_program *prog;
+    struct timespec mono_now;
+    struct timespec real_now;
+    struct time_offset_state time_offset = {};
     int map_fd;
     int prog_fd;
     __u32 key = 0;
@@ -148,6 +159,30 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
     }
     if (bpf_map_update_elem(map_fd, &key, cfg, BPF_ANY) != 0) {
         fprintf(stderr, "error: failed to push config into config_map: %s\n", strerror(errno));
+        bpf_object__close(handle->obj);
+        handle->obj = NULL;
+        return -1;
+    }
+
+    if (clock_gettime(CLOCK_MONOTONIC, &mono_now) != 0 ||
+        clock_gettime(CLOCK_REALTIME, &real_now) != 0) {
+        fprintf(stderr, "error: failed to read system clocks: %s\n", strerror(errno));
+        bpf_object__close(handle->obj);
+        handle->obj = NULL;
+        return -1;
+    }
+
+    map_fd = bpf_object__find_map_fd_by_name(handle->obj, "time_offset_map");
+    if (map_fd < 0) {
+        fprintf(stderr, "error: failed to find time_offset_map\n");
+        bpf_object__close(handle->obj);
+        handle->obj = NULL;
+        return -1;
+    }
+
+    time_offset.realtime_offset_sec = (__s64)real_now.tv_sec - (__s64)mono_now.tv_sec;
+    if (bpf_map_update_elem(map_fd, &key, &time_offset, BPF_ANY) != 0) {
+        fprintf(stderr, "error: failed to push time offset into time_offset_map: %s\n", strerror(errno));
         bpf_object__close(handle->obj);
         handle->obj = NULL;
         return -1;

@@ -33,7 +33,7 @@ static void usage(const char *prog)
             "  --session-id <u64>           Session id (required for deauth/bind, random for auth)\n"
             "  --bind-port <port>           Protected service port (required for bind)\n"
             "  --nonce <u32>                Explicit nonce (default: random)\n"
-            "  --timestamp-sec <u32>        Explicit monotonic timestamp (default: CLOCK_MONOTONIC)\n",
+            "  --timestamp-sec <u32>        Explicit Unix epoch timestamp (default: CLOCK_REALTIME)\n",
             prog);
 }
 
@@ -248,8 +248,8 @@ int main(int argc, char **argv)
 
     if (!have_ts) {
         struct timespec now;
-        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
-            fprintf(stderr, "error: clock_gettime(CLOCK_MONOTONIC) failed: %s\n", strerror(errno));
+        if (clock_gettime(CLOCK_REALTIME, &now) != 0) {
+            fprintf(stderr, "error: clock_gettime(CLOCK_REALTIME) failed: %s\n", strerror(errno));
             return 1;
         }
         ts = (uint32_t)now.tv_sec;

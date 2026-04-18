@@ -60,6 +60,13 @@ struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 1);
     __type(key, __u32);
+    __type(value, struct time_offset_state);
+} time_offset_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
     __type(value, struct debug_knock_snapshot);
 } debug_knock_map SEC(".maps");
 
@@ -107,11 +114,31 @@ static __always_inline bool is_protected_port(const struct knock_config *cfg, __
     return false;
 }
 
+static __always_inline bool get_realtime_sec(__u32 *now_sec)
+{
+    __u32 key = 0;
+    __u64 mono_sec = bpf_ktime_get_ns() / 1000000000ULL;
+    const struct time_offset_state *offset;
+    __s64 realtime_sec;
+
+    offset = bpf_map_lookup_elem(&time_offset_map, &key);
+    if (!offset) {
+        return false;
+    }
+
+    realtime_sec = (__s64)mono_sec + offset->realtime_offset_sec;
+    if (realtime_sec < 0) {
+        return false;
+    }
+
+    *now_sec = (__u32)realtime_sec;
+    return true;
+}
+
 static __always_inline bool knock_is_valid_with_key(const __u8 key[KNOCK_HMAC_KEY_LEN],
                                                     const struct knock_packet *pkt)
 {
-    __u64 now_ns = bpf_ktime_get_ns();
-    __u32 now_sec = (__u32)(now_ns / 1000000000ULL);
+    __u32 now_sec;
     __u32 ts_sec = bpf_ntohl(pkt->timestamp_sec);
     __u32 nonce = bpf_ntohl(pkt->nonce);
     __u8 packet_type = pkt->packet_type;
@@ -128,6 +155,10 @@ static __always_inline bool knock_is_valid_with_key(const __u8 key[KNOCK_HMAC_KE
     }
 
     if (packet_type != KNOCK_PKT_AUTH && packet_type != KNOCK_PKT_DEAUTH && packet_type != KNOCK_PKT_BIND) {
+        return false;
+    }
+
+    if (!get_realtime_sec(&now_sec)) {
         return false;
     }
 

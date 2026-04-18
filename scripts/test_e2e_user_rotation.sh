@@ -67,7 +67,7 @@ send_bind_knock() {
     local out_file="$5"
     local ts
 
-    ts="$(cut -d. -f1 /proc/uptime)"
+    ts="$(date +%s)"
 
     ./build/knock-client \
         --ifname lo \

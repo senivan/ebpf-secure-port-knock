@@ -157,7 +157,7 @@ else
 fi
 
 echo "[2/9] sending signed auth packet..."
-TS="$(cut -d. -f1 /proc/uptime)"
+TS="$(date +%s)"
 NONCE=424242
 ./build/knock-client \
     --ifname lo \
@@ -178,7 +178,7 @@ print_section "sent knock"
 cat /tmp/knock_client_test.log
 
 echo "[bind] opening flow session for authorized checks..."
-TS_BIND="$(cut -d. -f1 /proc/uptime)"
+TS_BIND="$(date +%s)"
 NONCE_BIND=424240
 ./build/knock-client \
     --ifname lo \
@@ -215,7 +215,7 @@ PY
 )"
 
 echo "[4/11] sending signed deauth packet with wrong session id..."
-TS_DEAUTH_BAD="$(cut -d. -f1 /proc/uptime)"
+TS_DEAUTH_BAD="$(date +%s)"
 NONCE_DEAUTH_BAD=424241
 ./build/knock-client \
   --ifname lo \
@@ -242,7 +242,7 @@ fi
 echo "ok: wrong-session deauth ignored"
 
 echo "[6/11] sending signed deauth packet for the active session..."
-TS_DEAUTH="$(cut -d. -f1 /proc/uptime)"
+TS_DEAUTH="$(date +%s)"
 NONCE_DEAUTH=424243
 ./build/knock-client \
   --ifname lo \
@@ -266,7 +266,7 @@ else
 fi
 
 echo "[8/11] sending fresh auth packet to reopen session for timeout checks..."
-TS2="$(cut -d. -f1 /proc/uptime)"
+TS2="$(date +%s)"
 NONCE2=424244
 ./build/knock-client \
   --ifname lo \
@@ -284,7 +284,7 @@ if [[ -z "$NEW_SESSION_ID" ]]; then
 fi
 
 echo "[bind] opening flow session for reauth checks..."
-TS_BIND2="$(cut -d. -f1 /proc/uptime)"
+TS_BIND2="$(date +%s)"
 NONCE_BIND2=424246
 ./build/knock-client \
     --ifname lo \
@@ -303,7 +303,7 @@ NONCE_BIND2=424246
 sleep 0.2
 
 echo "[9/11] replaying previous-session deauth must not revoke new session..."
-TS_DEAUTH_REPLAY="$(cut -d. -f1 /proc/uptime)"
+TS_DEAUTH_REPLAY="$(date +%s)"
 NONCE_DEAUTH_REPLAY=424245
 ./build/knock-client \
     --ifname lo \

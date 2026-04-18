@@ -74,7 +74,7 @@ send_bind_knock() {
     local out_file="$5"
     local ts
 
-    ts="$(cut -d. -f1 /proc/uptime)"
+    ts="$(date +%s)"
 
     ./build/knock-client \
         --ifname lo \
@@ -248,7 +248,7 @@ fi
 echo "ok: repeated user auth generates distinct sessions"
 
 echo "[7/10] replayed knock is counted and does not create new auth event..."
-TS_FIXED="$(cut -d. -f1 /proc/uptime)"
+TS_FIXED="$(date +%s)"
 NONCE_FIXED=777001
 SESSION_FIXED=$(( (101 << 48) | 0x12345 ))
 KNOCK_VALID_BEFORE="$(read_stat_counter knock_valid)"
@@ -294,7 +294,7 @@ echo "ok: replay detection active for per-user knocks"
 sleep 2
 
 echo "[8/10] deauth for active session immediately closes access..."
-TS_DEAUTH="$(cut -d. -f1 /proc/uptime)"
+TS_DEAUTH="$(date +%s)"
 NONCE_DEAUTH=777002
 ./build/knock-client \
     --ifname lo \
