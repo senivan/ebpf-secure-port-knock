@@ -5,6 +5,9 @@ KEY="00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 PROTECTED_PORT=2222
 KNOCK_PORT=40000
 TIMEOUT_MS=2000
+AUTH_FLOW_SRC_PORT=55001
+REAUTH_FLOW_SRC_PORT=55002
+REPLAY_FLOW_SRC_PORT=55003
 
 if [[ "$(id -u)" -ne 0 ]]; then
     echo "error: run as root (required for XDP attach and raw knock packets)" >&2
@@ -63,6 +66,29 @@ read_stat_counter() {
         '
 }
 
+run_connect_test() {
+    local msg="$1"
+    local src_port="$2"
+
+    python3 - <<PY
+import socket
+import sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.settimeout(1.5)
+try:
+    s.bind(("127.0.0.1", int(${src_port@Q})))
+    s.connect(("127.0.0.1", 2222))
+    s.sendall(${msg@Q}.encode())
+    data = s.recv(16)
+    s.close()
+    sys.exit(0 if data == b"ok" else 1)
+except Exception:
+    sys.exit(1)
+PY
+}
+
 active_session_count() {
     local count
     count="$(bpftool map dump pinned /sys/fs/bpf/knock_gate/active_session_map 2>/dev/null | grep -c '"key"' || true)"
@@ -110,7 +136,7 @@ sock.close()
 PY
 LISTENER_PID=$!
 
-./build/knockd \
+./build/knockd daemon \
   --ifname lo \
   --hmac-key "$KEY" \
   --protect "$PROTECTED_PORT" \
@@ -123,21 +149,7 @@ LOADER_PID=$!
 sleep 2
 
 echo "[1/9] checking unauthorized access is blocked..."
-if python3 - <<'PY'
-import socket
-import sys
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(1.5)
-try:
-    s.connect(("127.0.0.1", 2222))
-    s.sendall(b"unauthorized")
-    _ = s.recv(16)
-    s.close()
-    sys.exit(0)
-except Exception:
-    sys.exit(1)
-PY
+if run_connect_test "unauthorized" "$AUTH_FLOW_SRC_PORT"
 then
     fail_with_logs "protected port accepted unauthorized client"
 else
@@ -165,26 +177,27 @@ fi
 print_section "sent knock"
 cat /tmp/knock_client_test.log
 
+echo "[bind] opening flow session for authorized checks..."
+TS_BIND="$(cut -d. -f1 /proc/uptime)"
+NONCE_BIND=424240
+./build/knock-client \
+    --ifname lo \
+    --src-ip 127.0.0.1 \
+    --dst-ip 127.0.0.1 \
+    --dst-port "$KNOCK_PORT" \
+    --packet-type bind \
+    --session-id "$SESSION_ID" \
+    --src-port "$AUTH_FLOW_SRC_PORT" \
+    --bind-port "$PROTECTED_PORT" \
+    --timestamp-sec "$TS_BIND" \
+    --nonce "$NONCE_BIND" \
+    --hmac-key "$KEY" \
+    >/tmp/knock_client_bind_test.log 2>&1
+
 sleep 1
 
 echo "[3/9] checking authorized access now succeeds..."
-python3 - <<'PY'
-import socket
-import sys
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(2.0)
-try:
-    s.connect(("127.0.0.1", 2222))
-    s.sendall(b"authorized")
-    data = s.recv(16)
-    s.close()
-    if data == b"ok":
-        sys.exit(0)
-except Exception:
-    pass
-sys.exit(1)
-PY
+run_connect_test "authorized" "$AUTH_FLOW_SRC_PORT"
 
 if [[ $? -ne 0 ]]; then
     fail_with_logs "authorized client did not reach protected port"
@@ -245,21 +258,7 @@ NONCE_DEAUTH=424243
 
 echo "[7/11] verifying deauth immediately blocks access..."
 sleep 1
-if python3 - <<'PY'
-import socket
-import sys
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(1.5)
-try:
-    s.connect(("127.0.0.1", 2222))
-    s.sendall(b"after-deauth")
-    _ = s.recv(16)
-    s.close()
-    sys.exit(0)
-except Exception:
-    sys.exit(1)
-PY
+if run_connect_test "after-deauth" "$AUTH_FLOW_SRC_PORT"
 then
     fail_with_logs "client still authorized after deauth"
 else
@@ -279,7 +278,29 @@ NONCE2=424244
   --hmac-key "$KEY" \
   >/tmp/knock_client_reauth_test.log 2>&1
 
-sleep 1
+NEW_SESSION_ID="$(sed -n 's/.*session_id=\([0-9][0-9]*\).*/\1/p' /tmp/knock_client_reauth_test.log | head -n1)"
+if [[ -z "$NEW_SESSION_ID" ]]; then
+        fail_with_logs "unable to parse session_id from reauth output"
+fi
+
+echo "[bind] opening flow session for reauth checks..."
+TS_BIND2="$(cut -d. -f1 /proc/uptime)"
+NONCE_BIND2=424246
+./build/knock-client \
+    --ifname lo \
+    --src-ip 127.0.0.1 \
+    --dst-ip 127.0.0.1 \
+    --dst-port "$KNOCK_PORT" \
+    --packet-type bind \
+    --session-id "$NEW_SESSION_ID" \
+    --src-port "$REAUTH_FLOW_SRC_PORT" \
+    --bind-port "$PROTECTED_PORT" \
+    --timestamp-sec "$TS_BIND2" \
+    --nonce "$NONCE_BIND2" \
+    --hmac-key "$KEY" \
+    >/tmp/knock_client_reauth_bind_test.log 2>&1
+
+sleep 0.2
 
 echo "[9/11] replaying previous-session deauth must not revoke new session..."
 TS_DEAUTH_REPLAY="$(cut -d. -f1 /proc/uptime)"
@@ -296,24 +317,8 @@ NONCE_DEAUTH_REPLAY=424245
     --hmac-key "$KEY" \
     >/tmp/knock_client_deauth_replay_test.log 2>&1
 
-sleep 1
-python3 - <<'PY'
-import socket
-import sys
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(2.0)
-try:
-        s.connect(("127.0.0.1", 2222))
-        s.sendall(b"after-old-session-deauth")
-        data = s.recv(16)
-        s.close()
-        if data == b"ok":
-                sys.exit(0)
-except Exception:
-        pass
-sys.exit(1)
-PY
+sleep 0.2
+run_connect_test "after-old-session-deauth" "$REAUTH_FLOW_SRC_PORT"
 
 if [[ $? -ne 0 ]]; then
         fail_with_logs "old-session deauth revoked new active session"
@@ -329,21 +334,7 @@ echo "ok: reauthorized session is active"
 
 echo "[11/11] waiting for authorization timeout then confirming re-block..."
 sleep 3
-if python3 - <<'PY'
-import socket
-import sys
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(1.5)
-try:
-    s.connect(("127.0.0.1", 2222))
-    s.sendall(b"after-timeout")
-    _ = s.recv(16)
-    s.close()
-    sys.exit(0)
-except Exception:
-    sys.exit(1)
-PY
+if run_connect_test "after-timeout" "$REAUTH_FLOW_SRC_PORT"
 then
     fail_with_logs "client still authorized after timeout"
 else
@@ -364,21 +355,7 @@ echo "[extra] replaying the original auth knock should not reauthorize..."
 
 sleep 1
 
-if python3 - <<'PY'
-import socket
-import sys
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(1.5)
-try:
-    s.connect(("127.0.0.1", 2222))
-    s.sendall(b"replay")
-    _ = s.recv(16)
-    s.close()
-    sys.exit(0)
-except Exception:
-    sys.exit(1)
-PY
+if run_connect_test "replay" "$REPLAY_FLOW_SRC_PORT"
 then
     fail_with_logs "replayed knock reauthorized client"
 else

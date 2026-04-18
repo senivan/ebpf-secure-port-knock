@@ -5,6 +5,9 @@ KEY="00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 PROTECTED_PORT=2222
 KNOCK_PORT=40000
 TIMEOUT_MS=3000
+CLIENT_SSH_FLOW_PORT=55411
+CLIENT_REAUTH_SSH_FLOW_PORT=55412
+ATTACKER_SSH_FLOW_PORT=55421
 
 CLIENT_NS="knockns-client"
 ATTACKER_NS="knockns-attacker"
@@ -26,6 +29,7 @@ SSH_HOST_KEY="$SSH_TEST_DIR/ssh_host_ed25519_key"
 SSH_CLIENT_KEY="$SSH_TEST_DIR/client_ed25519"
 SSH_CFG="$SSH_TEST_DIR/sshd_config"
 SSH_LOG="$SSH_TEST_DIR/sshd.log"
+SSH_PROXY_HELPER="$SSH_TEST_DIR/ssh_proxy_bind.py"
 SSH_TEST_USER="${SSH_TEST_USER:-}"
 SSH_USER_HOME=""
 SSH_USER_DIR=""
@@ -169,6 +173,54 @@ StrictModes no
 LogLevel ERROR
 EOF
 
+    cat > "$SSH_PROXY_HELPER" <<'PY'
+#!/usr/bin/env python3
+import os
+import select
+import socket
+import sys
+
+if len(sys.argv) != 5:
+    sys.exit(2)
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+src_ip = sys.argv[3]
+src_port = int(sys.argv[4])
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind((src_ip, src_port))
+sock.connect((host, port))
+
+stdin_fd = sys.stdin.fileno()
+stdout_fd = sys.stdout.fileno()
+sock_fd = sock.fileno()
+
+while True:
+    read_fds = [sock_fd, stdin_fd]
+    ready, _, _ = select.select(read_fds, [], [])
+
+    if sock_fd in ready:
+        data = sock.recv(32768)
+        if not data:
+            break
+        os.write(stdout_fd, data)
+
+    if stdin_fd in ready:
+        data = os.read(stdin_fd, 32768)
+        if not data:
+            try:
+                sock.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+            continue
+        sock.sendall(data)
+
+sock.close()
+PY
+    chmod 700 "$SSH_PROXY_HELPER"
+
     /usr/sbin/sshd -D -f "$SSH_CFG" -E "$SSH_LOG" &
     SSHD_PID=$!
     sleep 1
@@ -177,6 +229,8 @@ EOF
 run_ssh_test() {
     local ns="$1"
     local marker="$2"
+    local src_ip="$3"
+    local src_port="$4"
 
     ip netns exec "$ns" ssh \
         -o BatchMode=yes \
@@ -185,6 +239,7 @@ run_ssh_test() {
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
         -o ConnectTimeout=2 \
+        -o "ProxyCommand=python3 $SSH_PROXY_HELPER %h %p $src_ip $src_port" \
         -i "$SSH_CLIENT_KEY" \
         -p "$PROTECTED_PORT" \
         "$SSH_TEST_USER"@"$EDGE_IP" \
@@ -249,7 +304,7 @@ LOADER_PID=$!
 sleep 2
 
 echo "[1/11] attacker cannot SSH before knock..."
-if run_ssh_test "$ATTACKER_NS" "attacker-pre"; then
+if run_ssh_test "$ATTACKER_NS" "attacker-pre" "$ATTACKER_IP" "$ATTACKER_SSH_FLOW_PORT"; then
     echo "fail: attacker unexpectedly reached SSH before authorization" >&2
     exit 1
 else
@@ -257,7 +312,7 @@ else
 fi
 
 echo "[2/11] client cannot SSH before knock..."
-if run_ssh_test "$CLIENT_NS" "client-pre"; then
+if run_ssh_test "$CLIENT_NS" "client-pre" "$CLIENT_IP" "$CLIENT_SSH_FLOW_PORT"; then
     echo "fail: client unexpectedly reached SSH before knock" >&2
     exit 1
 else
@@ -283,10 +338,26 @@ if [[ -z "$SESSION_ID" ]]; then
         exit 1
 fi
 
+TS_BIND="$(cut -d. -f1 /proc/uptime)"
+NONCE_BIND=271826
+ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
+    --ifname "$CLIENT_NS_IF" \
+    --src-ip "$CLIENT_IP" \
+    --dst-ip "$EDGE_IP" \
+    --dst-port "$KNOCK_PORT" \
+    --packet-type bind \
+    --session-id "$SESSION_ID" \
+    --src-port "$CLIENT_SSH_FLOW_PORT" \
+    --bind-port "$PROTECTED_PORT" \
+    --timestamp-sec "$TS_BIND" \
+    --nonce "$NONCE_BIND" \
+    --hmac-key "$KEY" \
+    >/tmp/knock_client_netns_ssh_bind_test.log 2>&1
+
 sleep 1
 
 echo "[4/11] client can SSH after valid auth..."
-if run_ssh_test "$CLIENT_NS" "client-post"; then
+if run_ssh_test "$CLIENT_NS" "client-post" "$CLIENT_IP" "$CLIENT_SSH_FLOW_PORT"; then
     echo "ok: client authorized"
 else
     echo "fail: client could not SSH after valid knock" >&2
@@ -296,7 +367,7 @@ else
 fi
 
 echo "[5/11] attacker remains blocked..."
-if run_ssh_test "$ATTACKER_NS" "attacker-post"; then
+if run_ssh_test "$ATTACKER_NS" "attacker-post" "$ATTACKER_IP" "$ATTACKER_SSH_FLOW_PORT"; then
     echo "fail: attacker gained SSH access without authorization" >&2
     exit 1
 else
@@ -354,7 +425,7 @@ ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
 sleep 1
 
 echo "[9/11] deauth immediately closes SSH access..."
-if run_ssh_test "$CLIENT_NS" "client-deauth"; then
+if run_ssh_test "$CLIENT_NS" "client-deauth" "$CLIENT_IP" "$CLIENT_SSH_FLOW_PORT"; then
     echo "fail: client still has SSH after deauth" >&2
     exit 1
 else
@@ -374,15 +445,37 @@ ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
   --hmac-key "$KEY" \
   >/tmp/knock_client_netns_ssh_reauth_test.log 2>&1
 
+REAUTH_SESSION_ID="$(sed -n 's/.*session_id=\([0-9][0-9]*\).*/\1/p' /tmp/knock_client_netns_ssh_reauth_test.log | head -n1)"
+if [[ -z "$REAUTH_SESSION_ID" ]]; then
+        echo "fail: unable to parse session_id from SSH reauth output" >&2
+        exit 1
+fi
+
+TS_BIND2="$(cut -d. -f1 /proc/uptime)"
+NONCE_BIND2=271831
+ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
+    --ifname "$CLIENT_NS_IF" \
+    --src-ip "$CLIENT_IP" \
+    --dst-ip "$EDGE_IP" \
+    --dst-port "$KNOCK_PORT" \
+    --packet-type bind \
+    --session-id "$REAUTH_SESSION_ID" \
+    --src-port "$CLIENT_REAUTH_SSH_FLOW_PORT" \
+    --bind-port "$PROTECTED_PORT" \
+    --timestamp-sec "$TS_BIND2" \
+    --nonce "$NONCE_BIND2" \
+    --hmac-key "$KEY" \
+    >/tmp/knock_client_netns_ssh_reauth_bind_test.log 2>&1
+
 sleep 1
-if ! run_ssh_test "$CLIENT_NS" "client-reauth"; then
+if ! run_ssh_test "$CLIENT_NS" "client-reauth" "$CLIENT_IP" "$CLIENT_REAUTH_SSH_FLOW_PORT"; then
     echo "fail: client could not SSH after reauth" >&2
     exit 1
 fi
 
 echo "[11/11] authorization timeout closes SSH access again..."
 sleep 4
-if run_ssh_test "$CLIENT_NS" "client-timeout"; then
+if run_ssh_test "$CLIENT_NS" "client-timeout" "$CLIENT_IP" "$CLIENT_REAUTH_SSH_FLOW_PORT"; then
     echo "fail: client still has SSH after timeout" >&2
     exit 1
 else

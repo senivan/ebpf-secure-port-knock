@@ -5,6 +5,9 @@ KEY="00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 PROTECTED_PORT=2222
 KNOCK_PORT=40000
 TIMEOUT_MS=3000
+CLIENT_FLOW_SRC_PORT=55011
+CLIENT_REAUTH_FLOW_SRC_PORT=55012
+ATTACKER_FLOW_SRC_PORT=55021
 
 CLIENT_NS="knockns-client"
 ATTACKER_NS="knockns-attacker"
@@ -102,14 +105,18 @@ PY
 run_connect_test() {
     local ns="$1"
     local msg="$2"
+    local src_ip="$3"
+    local src_port="$4"
 
     ip netns exec "$ns" python3 - <<PY
 import socket
 import sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.settimeout(1.5)
 try:
+    s.bind((${src_ip@Q}, int(${src_port@Q})))
     s.connect(("10.200.0.1", 2222))
     s.sendall(${msg@Q}.encode())
     data = s.recv(16)
@@ -159,7 +166,7 @@ LOADER_PID=$!
 sleep 2
 
 echo "[1/11] attacker cannot access protected port..."
-if run_connect_test "$ATTACKER_NS" "attacker-pre"; then
+if run_connect_test "$ATTACKER_NS" "attacker-pre" "$ATTACKER_IP" "$ATTACKER_FLOW_SRC_PORT"; then
     echo "fail: attacker unexpectedly reached protected service" >&2
     exit 1
 else
@@ -167,7 +174,7 @@ else
 fi
 
 echo "[2/11] client cannot access before knock..."
-if run_connect_test "$CLIENT_NS" "client-pre"; then
+if run_connect_test "$CLIENT_NS" "client-pre" "$CLIENT_IP" "$CLIENT_FLOW_SRC_PORT"; then
     echo "fail: client unexpectedly reached service before knock" >&2
     exit 1
 else
@@ -193,10 +200,26 @@ if [[ -z "$SESSION_ID" ]]; then
     exit 1
 fi
 
+TS_BIND="$(cut -d. -f1 /proc/uptime)"
+NONCE_BIND=314157
+ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
+    --ifname "$CLIENT_NS_IF" \
+    --src-ip "$CLIENT_IP" \
+    --dst-ip "$EDGE_IP" \
+    --dst-port "$KNOCK_PORT" \
+    --packet-type bind \
+    --session-id "$SESSION_ID" \
+    --src-port "$CLIENT_FLOW_SRC_PORT" \
+    --bind-port "$PROTECTED_PORT" \
+    --timestamp-sec "$TS_BIND" \
+    --nonce "$NONCE_BIND" \
+    --hmac-key "$KEY" \
+    >/tmp/knock_client_netns_bind_test.log 2>&1
+
 sleep 1
 
 echo "[4/11] client now reaches protected port..."
-if run_connect_test "$CLIENT_NS" "client-post"; then
+if run_connect_test "$CLIENT_NS" "client-post" "$CLIENT_IP" "$CLIENT_FLOW_SRC_PORT"; then
     echo "ok: client authorized"
 else
     echo "fail: client could not reach service after valid knock" >&2
@@ -204,7 +227,7 @@ else
 fi
 
 echo "[5/11] attacker remains blocked..."
-if run_connect_test "$ATTACKER_NS" "attacker-post"; then
+if run_connect_test "$ATTACKER_NS" "attacker-post" "$ATTACKER_IP" "$ATTACKER_FLOW_SRC_PORT"; then
     echo "fail: attacker gained access without authorization" >&2
     exit 1
 else
@@ -262,7 +285,7 @@ ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
 sleep 1
 
 echo "[9/11] deauth immediately blocks client..."
-if run_connect_test "$CLIENT_NS" "client-deauth"; then
+if run_connect_test "$CLIENT_NS" "client-deauth" "$CLIENT_IP" "$CLIENT_FLOW_SRC_PORT"; then
     echo "fail: client still authorized after deauth" >&2
     exit 1
 else
@@ -282,15 +305,37 @@ ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
   --hmac-key "$KEY" \
   >/tmp/knock_client_netns_reauth_test.log 2>&1
 
+REAUTH_SESSION_ID="$(sed -n 's/.*session_id=\([0-9][0-9]*\).*/\1/p' /tmp/knock_client_netns_reauth_test.log | head -n1)"
+if [[ -z "$REAUTH_SESSION_ID" ]]; then
+        echo "fail: unable to parse session_id from netns reauth output" >&2
+        exit 1
+fi
+
+TS_BIND2="$(cut -d. -f1 /proc/uptime)"
+NONCE_BIND2=314162
+ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
+    --ifname "$CLIENT_NS_IF" \
+    --src-ip "$CLIENT_IP" \
+    --dst-ip "$EDGE_IP" \
+    --dst-port "$KNOCK_PORT" \
+    --packet-type bind \
+    --session-id "$REAUTH_SESSION_ID" \
+    --src-port "$CLIENT_REAUTH_FLOW_SRC_PORT" \
+    --bind-port "$PROTECTED_PORT" \
+    --timestamp-sec "$TS_BIND2" \
+    --nonce "$NONCE_BIND2" \
+    --hmac-key "$KEY" \
+    >/tmp/knock_client_netns_reauth_bind_test.log 2>&1
+
 sleep 1
-if ! run_connect_test "$CLIENT_NS" "client-reauth"; then
+if ! run_connect_test "$CLIENT_NS" "client-reauth" "$CLIENT_IP" "$CLIENT_REAUTH_FLOW_SRC_PORT"; then
     echo "fail: client could not reach service after reauth" >&2
     exit 1
 fi
 
 echo "[11/11] timeout expires and client is blocked again..."
 sleep 4
-if run_connect_test "$CLIENT_NS" "client-timeout"; then
+if run_connect_test "$CLIENT_NS" "client-timeout" "$CLIENT_IP" "$CLIENT_REAUTH_FLOW_SRC_PORT"; then
     echo "fail: client still authorized after timeout" >&2
     exit 1
 else
