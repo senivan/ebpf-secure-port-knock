@@ -7,6 +7,7 @@ KEY_USER200_V2="33445566778899001122aabbccddeeff33445566778899001122aabbccddeeff
 PROTECTED_PORT=2222
 KNOCK_PORT=40000
 TIMEOUT_MS=2500
+FLOW_SRC_PORT=55300
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -18,13 +19,17 @@ require_root() {
 }
 
 run_connect_test() {
-    python3 - <<'PY'
+    local src_port="$1"
+
+    python3 - <<PY
 import socket
 import sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.settimeout(1.5)
 try:
+    s.bind(("127.0.0.1", int(${src_port@Q})))
     s.connect(("127.0.0.1", 2222))
     s.sendall(b"probe")
     data = s.recv(16)
@@ -33,6 +38,31 @@ try:
 except Exception:
     sys.exit(1)
 PY
+}
+
+send_bind_knock() {
+    local session_id="$1"
+    local src_port="$2"
+    local nonce="$3"
+    local hmac_key="$4"
+    local out_file="$5"
+    local ts
+
+    ts="$(cut -d. -f1 /proc/uptime)"
+
+    ./build/knock-client \
+        --ifname lo \
+        --src-ip 127.0.0.1 \
+        --dst-ip 127.0.0.1 \
+        --dst-port "$KNOCK_PORT" \
+        --packet-type bind \
+        --session-id "$session_id" \
+        --src-port "$src_port" \
+        --bind-port "$PROTECTED_PORT" \
+        --timestamp-sec "$ts" \
+        --nonce "$nonce" \
+        --hmac-key "$hmac_key" \
+        >"$out_file" 2>&1
 }
 
 fail_with_logs() {
@@ -131,8 +161,13 @@ echo "[4/11] user 200 can authenticate immediately..."
     --user-id 200 \
     --hmac-key "$KEY_USER200" \
     >/tmp/knock_admin_user200_ok.log 2>&1
+SESSION_200_A="$(sed -n 's/.*session_id=\([0-9][0-9]*\).*/\1/p' /tmp/knock_admin_user200_ok.log | head -n1)"
+if [[ -z "$SESSION_200_A" ]]; then
+    fail_with_logs "unable to parse session id for user 200 auth"
+fi
+send_bind_knock "$SESSION_200_A" "$FLOW_SRC_PORT" 999100 "$KEY_USER200" /tmp/knock_admin_user200_bind.log
 sleep 1
-if ! run_connect_test; then
+if ! run_connect_test "$FLOW_SRC_PORT"; then
     fail_with_logs "user 200 was not authorized after live registration"
 fi
 echo "ok: live-registered user can authenticate"
@@ -179,8 +214,13 @@ fi
     --user-id 200 \
     --hmac-key "$KEY_USER200_V2" \
     >/tmp/knock_admin_user200_v2.log 2>&1
+SESSION_200_B="$(sed -n 's/.*session_id=\([0-9][0-9]*\).*/\1/p' /tmp/knock_admin_user200_v2.log | head -n1)"
+if [[ -z "$SESSION_200_B" ]]; then
+    fail_with_logs "unable to parse session id for user 200 rotated auth"
+fi
+send_bind_knock "$SESSION_200_B" "$FLOW_SRC_PORT" 999101 "$KEY_USER200_V2" /tmp/knock_admin_user200_v2_bind.log
 sleep 1
-if ! run_connect_test; then
+if ! run_connect_test "$FLOW_SRC_PORT"; then
     fail_with_logs "user 200 new key did not authenticate"
 fi
 echo "ok: rotated key works"
@@ -205,7 +245,7 @@ echo "[10/11] revoked user 200 can no longer authenticate..."
     --hmac-key "$KEY_USER200_V2" \
     >/tmp/knock_admin_user200_revoked.log 2>&1
 sleep 1
-if run_connect_test; then
+if run_connect_test "$FLOW_SRC_PORT"; then
     fail_with_logs "revoked user 200 still gained access"
 fi
 echo "ok: revoked user blocked"

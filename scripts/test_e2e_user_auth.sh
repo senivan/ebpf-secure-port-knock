@@ -8,6 +8,8 @@ PROTECTED_PORT=2222
 KNOCK_PORT=40000
 TIMEOUT_MS=1500
 BIND_WINDOW_MS=1500
+FLOW_USER100_PORT=55100
+FLOW_USER101_PORT=55101
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -43,13 +45,17 @@ read_stat_counter() {
 }
 
 run_connect_test() {
-    python3 - <<'PY'
+    local src_port="$1"
+
+    python3 - <<PY
 import socket
 import sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.settimeout(1.5)
 try:
+    s.bind(("127.0.0.1", int(${src_port@Q})))
     s.connect(("127.0.0.1", 2222))
     s.sendall(b"probe")
     data = s.recv(16)
@@ -58,6 +64,31 @@ try:
 except Exception:
     sys.exit(1)
 PY
+}
+
+send_bind_knock() {
+    local session_id="$1"
+    local src_port="$2"
+    local nonce="$3"
+    local hmac_key="$4"
+    local out_file="$5"
+    local ts
+
+    ts="$(cut -d. -f1 /proc/uptime)"
+
+    ./build/knock-client \
+        --ifname lo \
+        --src-ip 127.0.0.1 \
+        --dst-ip 127.0.0.1 \
+        --dst-port "$KNOCK_PORT" \
+        --packet-type bind \
+        --session-id "$session_id" \
+        --src-port "$src_port" \
+        --bind-port "$PROTECTED_PORT" \
+        --timestamp-sec "$ts" \
+        --nonce "$nonce" \
+        --hmac-key "$hmac_key" \
+        >"$out_file" 2>&1
 }
 
 fail_with_logs() {
@@ -125,7 +156,7 @@ LOADER_PID=$!
 sleep 2
 
 echo "[1/8] unauthorized access is blocked..."
-if run_connect_test; then
+if run_connect_test "$FLOW_USER100_PORT"; then
     fail_with_logs "protected service accepted connection before knock"
 fi
 echo "ok: blocked before knock"
@@ -139,8 +170,13 @@ echo "[2/8] user 100 with correct key can authenticate..."
     --user-id 100 \
     --hmac-key "$KEY_USER100" \
     >/tmp/knock_client_user100_ok.log 2>&1
+SESSION_100="$(sed -n 's/.*session_id=\([0-9][0-9]*\).*/\1/p' /tmp/knock_client_user100_ok.log | head -n1)"
+if [[ -z "$SESSION_100" ]]; then
+    fail_with_logs "unable to parse session id for user 100 auth"
+fi
+send_bind_knock "$SESSION_100" "$FLOW_USER100_PORT" 777100 "$KEY_USER100" /tmp/knock_client_user100_bind.log
 sleep 1
-if ! run_connect_test; then
+if ! run_connect_test "$FLOW_USER100_PORT"; then
     fail_with_logs "user 100 was not authorized"
 fi
 echo "ok: user 100 authorized"
@@ -148,7 +184,7 @@ echo "ok: user 100 authorized"
 sleep 2
 
 echo "[3/8] session times out and access closes..."
-if run_connect_test; then
+if run_connect_test "$FLOW_USER100_PORT"; then
     fail_with_logs "session should have timed out"
 fi
 echo "ok: timeout enforced"
@@ -168,7 +204,7 @@ UNKNOWN_AFTER="$(read_stat_counter unknown_user)"
 if [[ "$UNKNOWN_AFTER" -le "$UNKNOWN_BEFORE" ]]; then
     fail_with_logs "unknown_user counter did not increment"
 fi
-if run_connect_test; then
+if run_connect_test "$FLOW_USER100_PORT"; then
     fail_with_logs "unknown user should not gain access"
 fi
 echo "ok: unknown user rejected"
@@ -186,8 +222,9 @@ SESSION_101_A="$(sed -n 's/.*session_id=\([0-9][0-9]*\).*/\1/p' /tmp/knock_clien
 if [[ -z "$SESSION_101_A" ]]; then
     fail_with_logs "unable to parse session id for user 101 auth"
 fi
+send_bind_knock "$SESSION_101_A" "$FLOW_USER101_PORT" 777101 "$KEY_USER101" /tmp/knock_client_user101_bind.log
 sleep 1
-if ! run_connect_test; then
+if ! run_connect_test "$FLOW_USER101_PORT"; then
     fail_with_logs "user 101 was not authorized with correct key"
 fi
 echo "ok: user 101 authorized"
@@ -272,7 +309,7 @@ NONCE_DEAUTH=777002
     >/tmp/knock_client_deauth_101.log 2>&1
 
 sleep 1
-if run_connect_test; then
+if run_connect_test "$FLOW_USER101_PORT"; then
     fail_with_logs "service should be blocked after deauth"
 fi
 echo "ok: deauth immediately revokes active auth"

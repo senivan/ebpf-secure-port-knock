@@ -24,3 +24,6 @@ admin-panel/backend/.env
 admin-panel/backend/.coverage
 admin-panel/**/__pycache__/
 admin-panel/**/*.pyc
+
+
+*.agent.md

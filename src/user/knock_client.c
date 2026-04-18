@@ -379,9 +379,10 @@ int main(int argc, char **argv)
     }
 
     close(fd);
-        printf("Knock frame sent on %s to %s:%u from %s:%u\n", ifname, dst_ip_str, dst_port, src_ip_str, src_port);
-        printf("type=%s timestamp=%u session_id=%" PRIu64 " nonce=%u sig=%08x:%08x:%08x:%08x\n",
-               packet_type == KNOCK_PKT_DEAUTH ? "deauth" : "auth",
+         printf("Knock frame sent on %s to %s:%u from %s:%u\n", ifname, dst_ip_str, dst_port, src_ip_str, src_port);
+         printf("type=%s timestamp=%u session_id=%" PRIu64 " nonce=%u sig=%08x:%08x:%08x:%08x\n",
+             packet_type == KNOCK_PKT_DEAUTH ? "deauth" :
+             (packet_type == KNOCK_PKT_BIND ? "bind" : "auth"),
             ts,
             (uint64_t)session_id,
             nonce,
