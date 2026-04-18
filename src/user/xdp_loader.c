@@ -62,6 +62,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     int active_fd;
     int session_idx_fd;
     int replay_fd;
+    int source_pressure_fd;
     int stats_fd;
     int time_offset_fd;
     int snap_fd;
@@ -71,6 +72,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     char active_pin[256];
     char session_idx_pin[256];
     char replay_pin[256];
+    char source_pressure_pin[256];
     char stats_pin[256];
     char time_offset_pin[256];
     char snap_pin[256];
@@ -85,6 +87,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     active_fd = bpf_object__find_map_fd_by_name(obj, "active_session_map");
     session_idx_fd = bpf_object__find_map_fd_by_name(obj, "session_index_map");
     replay_fd = bpf_object__find_map_fd_by_name(obj, "replay_nonce_map");
+    source_pressure_fd = bpf_object__find_map_fd_by_name(obj, "source_pressure_map");
     stats_fd = bpf_object__find_map_fd_by_name(obj, "stats_map");
     time_offset_fd = bpf_object__find_map_fd_by_name(obj, "time_offset_map");
     snap_fd = bpf_object__find_map_fd_by_name(obj, "debug_knock_map");
@@ -95,6 +98,7 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     snprintf(active_pin, sizeof(active_pin), "%s/active_session_map", pin_dir);
     snprintf(session_idx_pin, sizeof(session_idx_pin), "%s/session_index_map", pin_dir);
     snprintf(replay_pin, sizeof(replay_pin), "%s/replay_nonce_map", pin_dir);
+    snprintf(source_pressure_pin, sizeof(source_pressure_pin), "%s/source_pressure_map", pin_dir);
     snprintf(stats_pin, sizeof(stats_pin), "%s/stats_map", pin_dir);
     snprintf(time_offset_pin, sizeof(time_offset_pin), "%s/time_offset_map", pin_dir);
     snprintf(snap_pin, sizeof(snap_pin), "%s/debug_knock_map", pin_dir);
@@ -114,6 +118,9 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     }
     if (replay_fd >= 0 && pin_map_fd(replay_fd, replay_pin) != 0) {
         fprintf(stderr, "warn: failed to pin replay_nonce_map at %s: %s\n", replay_pin, strerror(errno));
+    }
+    if (source_pressure_fd >= 0 && pin_map_fd(source_pressure_fd, source_pressure_pin) != 0) {
+        fprintf(stderr, "warn: failed to pin source_pressure_map at %s: %s\n", source_pressure_pin, strerror(errno));
     }
     if (stats_fd >= 0 && pin_map_fd(stats_fd, stats_pin) != 0) {
         fprintf(stderr, "warn: failed to pin stats_map at %s: %s\n", stats_pin, strerror(errno));

@@ -43,6 +43,13 @@ struct {
 } replay_nonce_map SEC(".maps");
 
 struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, 4096);
+    __type(key, __u32);
+    __type(value, struct source_pressure_state);
+} source_pressure_map SEC(".maps");
+
+struct {
     __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, KNOCK_MAX_USERS);
     __type(key, __u32);
@@ -90,6 +97,67 @@ static __always_inline bool update_map_or_fail(__u64 *counter,
     }
 
     return true;
+}
+
+static __always_inline bool source_pressure_allow_knock(__u32 src_ip,
+                                                        __u64 now_ns,
+                                                        struct debug_counters *stats)
+{
+    struct source_pressure_state current = {};
+    struct source_pressure_state *state = bpf_map_lookup_elem(&source_pressure_map, &src_ip);
+
+    if (state) {
+        current = *state;
+    }
+
+    if (!state || now_ns - current.window_start_ns >= KNOCK_SOURCE_PRESSURE_WINDOW_NS) {
+        current.window_start_ns = now_ns;
+        current.knock_count = 0;
+    }
+
+    if (current.knock_count >= KNOCK_MAX_KNOCKS_PER_SOURCE_WINDOW) {
+        bump(stats ? &stats->knock_rate_drop : NULL);
+        return false;
+    }
+
+    current.knock_count++;
+    return update_map_or_fail(stats ? &stats->map_update_fail : NULL,
+                              &source_pressure_map,
+                              &src_ip,
+                              &current);
+}
+
+static __always_inline bool source_pressure_reserve_session(__u32 src_ip,
+                                                            struct debug_counters *stats)
+{
+    struct source_pressure_state current = {};
+    struct source_pressure_state *state = bpf_map_lookup_elem(&source_pressure_map, &src_ip);
+
+    if (state) {
+        current = *state;
+    }
+
+    if (current.active_sessions >= KNOCK_MAX_ACTIVE_SESSIONS_PER_SOURCE) {
+        bump(stats ? &stats->session_limit_drop : NULL);
+        return false;
+    }
+
+    current.active_sessions++;
+    return update_map_or_fail(stats ? &stats->map_update_fail : NULL,
+                              &source_pressure_map,
+                              &src_ip,
+                              &current);
+}
+
+static __always_inline void source_pressure_release_session(__u32 src_ip)
+{
+    struct source_pressure_state *state = bpf_map_lookup_elem(&source_pressure_map, &src_ip);
+
+    if (!state || state->active_sessions == 0) {
+        return;
+    }
+
+    state->active_sessions--;
 }
 
 static __always_inline bool ptr_ok(const void *ptr, const void *data_end, __u64 len)
@@ -280,6 +348,10 @@ int port_knock_xdp(struct xdp_md *ctx)
         struct session_lookup_key deauth_key = {};
         struct replay_nonce_state *seen;
 
+        if (!source_pressure_allow_knock(iph->saddr, now_ns, stats)) {
+            return XDP_DROP;
+        }
+
         bump(stats ? &stats->knock_seen : NULL);
         kpkt = (struct knock_packet *)((void *)tcph + ((__u64)tcph->doff * 4U));
         if (!ptr_ok(kpkt, data_end, sizeof(*kpkt))) {
@@ -366,7 +438,12 @@ int port_knock_xdp(struct xdp_md *ctx)
                 new_pending.session_id_hi = session_id_hi;
                 new_pending.session_id_lo = session_id_lo;
                 new_pending.expires_at_ns = now_ns + ((__u64)cfg->bind_window_ms * 1000000ULL);
-                bpf_map_update_elem(&pending_auth_map, &pending_key, &new_pending, BPF_ANY);
+                if (!update_map_or_fail(stats ? &stats->map_update_fail : NULL,
+                                        &pending_auth_map,
+                                        &pending_key,
+                                        &new_pending)) {
+                    return XDP_DROP;
+                }
                 bump(stats ? &stats->knock_valid : NULL);
             } else if (packet_type == KNOCK_PKT_BIND) {
                 pending = bpf_map_lookup_elem(&pending_auth_map, &pending_key);
@@ -384,6 +461,10 @@ int port_knock_xdp(struct xdp_md *ctx)
                     return XDP_DROP;
                 }
 
+                if (!source_pressure_reserve_session(iph->saddr, stats)) {
+                    return XDP_DROP;
+                }
+
                 flow.src_port = bind_src_port;
                 flow.dst_port = bind_dst_port;
                 new_sess.session_id_hi = session_id_hi;
@@ -393,6 +474,7 @@ int port_knock_xdp(struct xdp_md *ctx)
                                         &active_session_map,
                                         &flow,
                                         &new_sess)) {
+                    source_pressure_release_session(iph->saddr);
                     return XDP_DROP;
                 }
 
@@ -401,6 +483,7 @@ int port_knock_xdp(struct xdp_md *ctx)
                 lookup_key.session_id_lo = session_id_lo;
                 if (bpf_map_update_elem(&session_index_map, &lookup_key, &flow, 0) != 0) {
                     bpf_map_delete_elem(&active_session_map, &flow);
+                    source_pressure_release_session(iph->saddr);
                     return XDP_DROP;
                 }
                 bpf_map_delete_elem(&pending_auth_map, &pending_key);
@@ -416,6 +499,7 @@ int port_knock_xdp(struct xdp_md *ctx)
                 }
                 bpf_map_delete_elem(&active_session_map, bound_flow);
                 bpf_map_delete_elem(&session_index_map, &deauth_key);
+                source_pressure_release_session(iph->saddr);
                 bump(stats ? &stats->knock_deauth : NULL);
             }
         }
@@ -439,6 +523,7 @@ int port_knock_xdp(struct xdp_md *ctx)
         lookup_key.session_id_lo = sess->session_id_lo;
         bpf_map_delete_elem(&session_index_map, &lookup_key);
         bpf_map_delete_elem(&active_session_map, &flow);
+        source_pressure_release_session(iph->saddr);
         bump(stats ? &stats->session_timeout_drop : NULL);
         bump(stats ? &stats->protected_drop : NULL);
         return XDP_DROP;
