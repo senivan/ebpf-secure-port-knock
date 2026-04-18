@@ -25,6 +25,8 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
                         __u32 user_count,
                         struct knock_loader_handle *handle);
 
+int knock_loader_validate_config(const struct knock_config *cfg);
+
 void knock_loader_detach(struct knock_loader_handle *handle);
 
 #endif /* XDP_LOADER_H */

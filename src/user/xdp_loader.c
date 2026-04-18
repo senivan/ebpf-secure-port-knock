@@ -39,6 +39,22 @@ static int pin_map_fd(int map_fd, const char *path)
     return bpf_obj_pin(map_fd, path);
 }
 
+int knock_loader_validate_config(const struct knock_config *cfg)
+{
+    if (!cfg) {
+        return -1;
+    }
+
+    if (cfg->replay_window_ms < KNOCK_MIN_REPLAY_WINDOW_MS) {
+        fprintf(stderr,
+                "error: --replay-window-ms must be at least %u ms to match the clock-skew window\n",
+                KNOCK_MIN_REPLAY_WINDOW_MS);
+        return -1;
+    }
+
+    return 0;
+}
+
 static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
 {
     int config_fd;
@@ -128,6 +144,10 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
     __u32 key = 0;
 
     memset(handle, 0, sizeof(*handle));
+
+    if (knock_loader_validate_config(cfg) != 0) {
+        return -1;
+    }
 
     handle->ifindex = if_nametoindex(opts->ifname);
     if (handle->ifindex == 0) {

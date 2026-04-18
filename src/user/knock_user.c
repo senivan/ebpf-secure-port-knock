@@ -37,7 +37,7 @@ static void usage(const char *prog)
             "  --protect <p1,p2,...>        Comma-separated protected service ports\n"
             "  --timeout-ms <ms>            Session lifetime after bind (default: %u)\n"
             "  --bind-window-ms <ms>        Time to bind first protected flow (default: %u)\n"
-            "  --replay-window-ms <ms>      Replay reject window for control packets (default: %u)\n",
+            "  --replay-window-ms <ms>      Replay reject window for control packets (default: %u, min: %u)\n",
             prog,
             prog,
             prog,
@@ -46,7 +46,8 @@ static void usage(const char *prog)
             KNOCK_DEFAULT_PORT,
             KNOCK_DEFAULT_TIMEOUT_MS,
             KNOCK_DEFAULT_BIND_WINDOW_MS,
-            KNOCK_DEFAULT_REPLAY_WINDOW_MS);
+            KNOCK_DEFAULT_REPLAY_WINDOW_MS,
+            KNOCK_MIN_REPLAY_WINDOW_MS);
 }
 
 static int open_user_map(const char *pin_dir)
@@ -367,6 +368,10 @@ static int cmd_daemon(int argc, char **argv)
             usage(argv[0]);
             return 1;
         }
+    }
+
+    if (knock_loader_validate_config(&cfg) != 0) {
+        return 1;
     }
 
     if (ifname == NULL || cfg.protected_count == 0) {
