@@ -62,6 +62,8 @@ make test-netns
 make test-ssh
 ```
 
+The daemon rejects `--replay-window-ms` values below the 30-second clock-skew window at startup.
+
 ## Current status
 
 Implemented in the starter XDP program:
