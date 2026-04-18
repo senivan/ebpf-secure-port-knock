@@ -35,10 +35,16 @@ jobs:
             gcc \
             pkg-config \
             libbpf-dev \
-            bpftool \
             iproute2 \
             openssh-client \
             openssh-server
+
+          if ! command -v bpftool >/dev/null 2>&1; then
+            # On some Ubuntu images bpftool is virtual; linux-tools-common provides it.
+            sudo apt-get install -y linux-tools-common
+          fi
+
+          command -v bpftool >/dev/null 2>&1
 
       - name: Sanity check runner prerequisites
         run: |
