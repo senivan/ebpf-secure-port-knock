@@ -39,19 +39,40 @@ jobs:
             openssh-client \
             openssh-server
 
-          if ! command -v bpftool >/dev/null 2>&1; then
-            # On some Ubuntu images bpftool is virtual; linux-tools-common provides it.
-            sudo apt-get install -y linux-tools-common
+          # On hosted Azure kernels, /usr/sbin/bpftool may be a wrapper that expects
+          # kernel-version-specific linux-tools packages that are not available.
+          sudo apt-get install -y linux-tools-common linux-tools-azure linux-cloud-tools-azure || true
+
+          bpftool_bin=""
+          if command -v bpftool >/dev/null 2>&1 && bpftool version >/dev/null 2>&1; then
+            bpftool_bin="$(command -v bpftool)"
           fi
 
-          command -v bpftool >/dev/null 2>&1
+          if [[ -z "$bpftool_bin" ]]; then
+            real_bpftool="$(find /usr/lib/linux-tools -type f -name bpftool 2>/dev/null | sort -V | tail -n1 || true)"
+            if [[ -n "$real_bpftool" ]]; then
+              bpftool_dir="$(dirname "$real_bpftool")"
+              echo "$bpftool_dir" >> "$GITHUB_PATH"
+              export PATH="$bpftool_dir:$PATH"
+              bpftool_bin="$real_bpftool"
+            fi
+          fi
+
+          if [[ -z "$bpftool_bin" ]] || ! bpftool version >/dev/null 2>&1; then
+            echo "error: unable to find a working bpftool binary" >&2
+            echo "searched /usr/lib/linux-tools for bpftool candidates" >&2
+            find /usr/lib/linux-tools -type f -name bpftool 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "using bpftool: $(command -v bpftool)"
 
       - name: Sanity check runner prerequisites
         run: |
           set -euo pipefail
           test -r /sys/kernel/btf/vmlinux
           command -v clang
-          command -v bpftool
+          bpftool version >/dev/null
           command -v ip
           command -v ssh
           command -v ssh-keygen
