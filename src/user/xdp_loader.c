@@ -27,10 +27,28 @@ static void raise_memlock_limit(void)
 
 static int ensure_dir(const char *path)
 {
-    if (mkdir(path, 0755) == 0 || errno == EEXIST) {
+    struct stat st;
+
+    if (mkdir(path, 0700) == 0) {
         return 0;
     }
-    return -1;
+
+    if (errno != EEXIST) {
+        return -1;
+    }
+
+    if (stat(path, &st) != 0) {
+        return -1;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    if ((st.st_mode & 0777) != 0700 && chmod(path, 0700) != 0) {
+        return -1;
+    }
+
+    return 0;
 }
 
 static int pin_map_fd(int map_fd, const char *path)
