@@ -16,3 +16,11 @@ include/vmlinux.h
 
 # OS files
 .DS_Store
+
+# Admin panel generated artifacts
+admin-panel/frontend/node_modules/
+admin-panel/backend/venv/
+admin-panel/backend/.env
+admin-panel/backend/.coverage
+admin-panel/**/__pycache__/
+admin-panel/**/*.pyc
