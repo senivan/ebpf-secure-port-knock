@@ -37,7 +37,8 @@ make run \
 	HMAC_KEY=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
 	PROTECT=22,443 \
 	KNOCK_PORT=40000 \
-	TIMEOUT_MS=5000
+	TIMEOUT_MS=5000 \
+	REPLAY_WINDOW_MS=30000
 ```
 
 Send a signed knock packet manually:
