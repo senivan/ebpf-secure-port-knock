@@ -119,12 +119,10 @@ static __inline void knock_sha256_transform(__u32 state[8], const __u8 block[64]
     __u32 w[16];
     __u32 i;
 
-#pragma clang loop unroll(full)
     for (i = 0; i < 16; i++) {
         w[i] = knock_load_be32(&block[i * 4]);
     }
 
-#pragma clang loop unroll(full)
     for (i = 0; i < 64; i++) {
         __u32 s0;
         __u32 s1;
@@ -182,11 +180,9 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
     __u64 m3 = ((__u64)(in->bind_dst_port & 0x00ffU) << 56) |
                0x0053474e31ULL;
 
-#pragma clang loop unroll(full)
     for (i = 0; i < KNOCK_HMAC_KEY_LEN; i++) {
         block[i] = key[i];
     }
-#pragma clang loop unroll(full)
     for (i = 0; i < 64; i++) {
         block[i] ^= 0x36U;
     }
@@ -194,7 +190,6 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
     knock_sha256_init(state);
     knock_sha256_transform(state, block);
 
-#pragma clang loop unroll(full)
     for (i = 0; i < 64; i++) {
         block[i] = 0;
     }
@@ -206,20 +201,16 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
     knock_store_be64(&block[56], padded_len_bits);
     knock_sha256_transform(state, block);
 
-#pragma clang loop unroll(full)
     for (i = 0; i < 8; i++) {
         inner_digest[i] = state[i];
     }
 
-#pragma clang loop unroll(full)
     for (i = 0; i < 64; i++) {
         block[i] = 0;
     }
-#pragma clang loop unroll(full)
     for (i = 0; i < KNOCK_HMAC_KEY_LEN; i++) {
         block[i] = key[i];
     }
-#pragma clang loop unroll(full)
     for (i = 0; i < 64; i++) {
         block[i] ^= 0x5cU;
     }
@@ -227,11 +218,9 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
     knock_sha256_init(state);
     knock_sha256_transform(state, block);
 
-#pragma clang loop unroll(full)
     for (i = 0; i < 64; i++) {
         block[i] = 0;
     }
-#pragma clang loop unroll(full)
     for (i = 0; i < 8; i++) {
         knock_store_be32(&block[i * 4], inner_digest[i]);
     }
