@@ -70,6 +70,21 @@ static __always_inline void bump(__u64 *counter)
     }
 }
 
+static __always_inline bool update_map_or_fail(__u64 *counter,
+                                               void *map,
+                                               const void *key,
+                                               const void *value)
+{
+    int ret = bpf_map_update_elem(map, key, value, BPF_ANY);
+
+    if (ret != 0) {
+        bump(counter);
+        return false;
+    }
+
+    return true;
+}
+
 static __always_inline bool ptr_ok(const void *ptr, const void *data_end, __u64 len)
 {
     return ((__u64)ptr + len) <= (__u64)data_end;
@@ -297,13 +312,23 @@ int port_knock_xdp(struct xdp_md *ctx)
                 replay_window_ns = (__u64)KNOCK_MAX_CLOCK_SKEW_SEC * 1000000000ULL;
             }
             replay_state.expires_at_ns = now_ns + replay_window_ns;
-            bpf_map_update_elem(&replay_nonce_map, &replay_key, &replay_state, BPF_ANY);
+            if (!update_map_or_fail(stats ? &stats->map_update_fail : NULL,
+                                    &replay_nonce_map,
+                                    &replay_key,
+                                    &replay_state)) {
+                return XDP_DROP;
+            }
 
             if (packet_type == KNOCK_PKT_AUTH) {
                 new_pending.session_id_hi = session_id_hi;
                 new_pending.session_id_lo = session_id_lo;
                 new_pending.expires_at_ns = now_ns + ((__u64)cfg->bind_window_ms * 1000000ULL);
-                bpf_map_update_elem(&pending_auth_map, &iph->saddr, &new_pending, BPF_ANY);
+                if (!update_map_or_fail(stats ? &stats->map_update_fail : NULL,
+                                        &pending_auth_map,
+                                        &iph->saddr,
+                                        &new_pending)) {
+                    return XDP_DROP;
+                }
                 bump(stats ? &stats->knock_valid : NULL);
             } else {
                 deauth_key.src_ip = iph->saddr;
@@ -345,12 +370,23 @@ int port_knock_xdp(struct xdp_md *ctx)
         new_sess.session_id_hi = pending->session_id_hi;
         new_sess.session_id_lo = pending->session_id_lo;
         new_sess.expires_at_ns = now_ns + ((__u64)cfg->timeout_ms * 1000000ULL);
-        bpf_map_update_elem(&active_session_map, &flow, &new_sess, BPF_ANY);
+        if (!update_map_or_fail(stats ? &stats->map_update_fail : NULL,
+                                &active_session_map,
+                                &flow,
+                                &new_sess)) {
+            return XDP_DROP;
+        }
 
         lookup_key.src_ip = iph->saddr;
         lookup_key.session_id_hi = pending->session_id_hi;
         lookup_key.session_id_lo = pending->session_id_lo;
-        bpf_map_update_elem(&session_index_map, &lookup_key, &flow, BPF_ANY);
+        if (!update_map_or_fail(stats ? &stats->map_update_fail : NULL,
+                                &session_index_map,
+                                &lookup_key,
+                                &flow)) {
+            bpf_map_delete_elem(&active_session_map, &flow);
+            return XDP_DROP;
+        }
         bpf_map_delete_elem(&pending_auth_map, &iph->saddr);
 
         bump(stats ? &stats->protected_pass : NULL);
