@@ -15,7 +15,7 @@ USER_COMMON_SRCS := src/user/cli_common.c
 KNOCKD_SRCS := src/user/knock_user.c src/user/xdp_loader.c $(USER_COMMON_SRCS)
 KNOCK_CLIENT_SRCS := src/user/knock_client.c src/user/net_checksum.c $(USER_COMMON_SRCS)
 
-.PHONY: all clean run test test-netns test-ssh test-user-auth test-user-rotation test-user-admin test-user-all test-config all-test help
+.PHONY: all clean run test test-netns test-ssh test-user-auth test-user-rotation test-user-admin test-user-all test-user-pressure test-config all-test help
 
 all: $(BPF_OBJ) $(USER_BIN) $(KNOCK_CLIENT_BIN)
 
@@ -29,6 +29,7 @@ help:
 	@echo "  make test-user-auth      Run per-user registration/isolation tests (requires root)"
 	@echo "  make test-user-rotation  Run per-user key rotation tests (requires root)"
 	@echo "  make test-user-admin     Run per-user admin live-update tests (requires root)"
+	@echo "  make test-user-pressure  Run per-user pressure tests (requires root)"
 	@echo "  make test-config         Run CLI config validation test"
 	@echo "  make test-user-all       Run all per-user feature tests"
 	@echo "  make all-test            Run all test suites"
@@ -83,9 +84,12 @@ test-user-admin: all
 test-config: all
 	bash ./scripts/test_cli_replay_window_validation.sh
 
+test-user-pressure: all
+	sudo bash ./scripts/test_e2e_user_pressure.sh
+
 test-user-all: test-user-auth test-user-rotation test-user-admin
 
-all-test: test test-netns test-ssh test-config test-user-all
+all-test: test test-netns test-ssh test-config test-user-pressure test-user-all
 
 clean:
 	rm -rf $(BUILD_DIR)

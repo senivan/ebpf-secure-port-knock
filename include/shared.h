@@ -16,6 +16,9 @@
 #define KNOCK_MIN_REPLAY_WINDOW_MS (KNOCK_MAX_CLOCK_SKEW_SEC * 1000U)
 #define KNOCK_DEFAULT_BIND_WINDOW_MS 3000U
 #define KNOCK_DEFAULT_REPLAY_WINDOW_MS 30000U
+#define KNOCK_SOURCE_PRESSURE_WINDOW_NS 10000000000ULL
+#define KNOCK_MAX_KNOCKS_PER_SOURCE_WINDOW 128U
+#define KNOCK_MAX_ACTIVE_SESSIONS_PER_SOURCE 32U
 #define KNOCK_MAX_USERS 1024U
 
 #define KNOCK_PKT_AUTH 1U
@@ -93,6 +96,12 @@ struct replay_nonce_state {
     __u64 expires_at_ns;
 };
 
+struct source_pressure_state {
+    __u64 window_start_ns;
+    __u32 knock_count;
+    __u32 active_sessions;
+};
+
 struct user_key_state {
     __u8 active_key[KNOCK_HMAC_KEY_LEN];
     __u8 previous_key[KNOCK_HMAC_KEY_LEN];
@@ -117,6 +126,8 @@ struct debug_counters {
     __u64 unknown_user;
     __u64 key_mismatch;
     __u64 grace_key_used;
+    __u64 knock_rate_drop;
+    __u64 session_limit_drop;
     __u64 map_update_fail;
     __u64 protected_drop;
     __u64 protected_pass;
