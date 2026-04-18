@@ -15,9 +15,13 @@
 #define KNOCK_MAX_CLOCK_SKEW_SEC 30U
 #define KNOCK_DEFAULT_BIND_WINDOW_MS 3000U
 #define KNOCK_DEFAULT_REPLAY_WINDOW_MS 30000U
+#define KNOCK_MAX_USERS 1024U
 
 #define KNOCK_PKT_AUTH 1U
 #define KNOCK_PKT_DEAUTH 2U
+
+#define KNOCK_USER_ID_SHIFT 16U
+#define KNOCK_USER_ID_MASK 0xffff0000U
 
 struct knock_packet {
     __u32 magic;
@@ -80,6 +84,18 @@ struct replay_nonce_state {
     __u64 expires_at_ns;
 };
 
+struct user_key_state {
+    __u8 active_key[KNOCK_HMAC_KEY_LEN];
+    __u8 previous_key[KNOCK_HMAC_KEY_LEN];
+    __u32 key_version;
+    __u64 grace_until_ns;
+};
+
+struct knock_user_record {
+    __u32 user_id;
+    __u8 hmac_key[KNOCK_HMAC_KEY_LEN];
+};
+
 struct debug_counters {
     __u64 knock_seen;
     __u64 knock_short;
@@ -89,6 +105,9 @@ struct debug_counters {
     __u64 bind_drop;
     __u64 session_timeout_drop;
     __u64 deauth_miss;
+    __u64 unknown_user;
+    __u64 key_mismatch;
+    __u64 grace_key_used;
     __u64 protected_drop;
     __u64 protected_pass;
 };

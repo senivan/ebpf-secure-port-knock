@@ -43,6 +43,13 @@ struct {
 } replay_nonce_map SEC(".maps");
 
 struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, KNOCK_MAX_USERS);
+    __type(key, __u32);
+    __type(value, struct user_key_state);
+} user_key_map SEC(".maps");
+
+struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 1);
     __type(key, __u32);
@@ -85,8 +92,8 @@ static __always_inline bool is_protected_port(const struct knock_config *cfg, __
     return false;
 }
 
-static __always_inline bool knock_is_valid(const struct knock_config *cfg,
-                                           const struct knock_packet *pkt)
+static __always_inline bool knock_is_valid_with_key(const __u8 key[KNOCK_HMAC_KEY_LEN],
+                                                    const struct knock_packet *pkt)
 {
     __u64 now_ns = bpf_ktime_get_ns();
     __u32 now_sec = (__u32)(now_ns / 1000000000ULL);
@@ -120,7 +127,7 @@ static __always_inline bool knock_is_valid(const struct knock_config *cfg,
     in.session_id_lo = session_id_lo;
     in.nonce = nonce;
 
-    knock_signature_words(cfg->hmac_key, &in, sig);
+    knock_signature_words(key, &in, sig);
 #pragma clang loop unroll(full)
     for (i = 0; i < KNOCK_SIGNATURE_WORDS; i++) {
         if (sig[i] != bpf_ntohl(pkt->signature[i])) {
@@ -129,6 +136,11 @@ static __always_inline bool knock_is_valid(const struct knock_config *cfg,
     }
 
     return true;
+}
+
+static __always_inline __u32 knock_user_id_from_session_hi(__u32 session_id_hi)
+{
+    return (session_id_hi & KNOCK_USER_ID_MASK) >> KNOCK_USER_ID_SHIFT;
 }
 
 SEC("xdp")
@@ -241,7 +253,30 @@ int port_knock_xdp(struct xdp_md *ctx)
             snap->sig3 = kpkt->signature[3];
         }
 
-        if (knock_is_valid(cfg, kpkt)) {
+        {
+            __u32 user_id = knock_user_id_from_session_hi(session_id_hi);
+            struct user_key_state *user_key = bpf_map_lookup_elem(&user_key_map, &user_id);
+            bool valid = false;
+
+            if (!user_key) {
+                bump(stats ? &stats->unknown_user : NULL);
+                return XDP_DROP;
+            }
+
+            if (knock_is_valid_with_key(user_key->active_key, kpkt)) {
+                valid = true;
+            } else if (user_key->grace_until_ns >= now_ns &&
+                       knock_is_valid_with_key(user_key->previous_key, kpkt)) {
+                bump(stats ? &stats->grace_key_used : NULL);
+                valid = true;
+            } else {
+                bump(stats ? &stats->key_mismatch : NULL);
+            }
+
+            if (!valid) {
+                return XDP_DROP;
+            }
+
             replay_key.src_ip = iph->saddr;
             replay_key.nonce = nonce_host;
             replay_key.packet_type = packet_type;

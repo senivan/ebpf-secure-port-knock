@@ -29,6 +29,7 @@ static void usage(const char *prog)
             "Options:\n"
             "  --src-port <port>            Source TCP port (default: 50000)\n"
             "  --packet-type <auth|deauth>  Control packet type (default: auth)\n"
+            "  --user-id <u16>              Numeric user ID (default for auth: 0)\n"
             "  --session-id <u64>           Session id (required for deauth, random for auth)\n"
             "  --nonce <u32>                Explicit nonce (default: random)\n"
             "  --timestamp-sec <u32>        Explicit monotonic timestamp (default: CLOCK_MONOTONIC)\n",
@@ -87,6 +88,7 @@ int main(int argc, char **argv)
         {"dst-port", required_argument, NULL, 'p'},
         {"src-port", required_argument, NULL, 'q'},
         {"packet-type", required_argument, NULL, 'm'},
+        {"user-id", required_argument, NULL, 'u'},
         {"session-id", required_argument, NULL, 'x'},
         {"hmac-key", required_argument, NULL, 'k'},
         {"nonce", required_argument, NULL, 'n'},
@@ -101,10 +103,12 @@ int main(int argc, char **argv)
     uint16_t src_port = 50000;
     uint16_t dst_port = KNOCK_DEFAULT_PORT;
     __u8 packet_type = KNOCK_PKT_AUTH;
+    __u32 user_id = 0;
     __u64 session_id = 0;
     uint32_t nonce = 0;
     uint32_t ts = 0;
     int have_session_id = 0;
+    int have_user_id = 0;
     int have_nonce = 0;
     int have_ts = 0;
     __u8 key[KNOCK_HMAC_KEY_LEN] = {0};
@@ -123,7 +127,7 @@ int main(int argc, char **argv)
     int opt;
     struct ifreq ifr;
 
-    while ((opt = getopt_long(argc, argv, "i:s:d:p:q:m:x:k:n:t:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "i:s:d:p:q:m:u:x:k:n:t:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'i':
             ifname = optarg;
@@ -158,6 +162,16 @@ int main(int argc, char **argv)
                 return 1;
             }
             break;
+        case 'u': {
+            unsigned long v = strtoul(optarg, NULL, 10);
+            if (v > 65535UL) {
+                fprintf(stderr, "error: invalid --user-id (must be 0..65535)\n");
+                return 1;
+            }
+            user_id = (__u32)v;
+            have_user_id = 1;
+            break;
+        }
         case 'x': {
             char *end = NULL;
             unsigned long long v = strtoull(optarg, &end, 0);
@@ -238,6 +252,13 @@ int main(int argc, char **argv)
         if (random_u64(&session_id) != 0) {
             fprintf(stderr, "error: failed to generate random session id: %s\n", strerror(errno));
             return 1;
+        }
+        if (packet_type == KNOCK_PKT_AUTH) {
+            if (!have_user_id) {
+                user_id = 0;
+            }
+            session_id &= 0x0000ffffffffffffULL;
+            session_id |= ((__u64)user_id << 48);
         }
     }
 
