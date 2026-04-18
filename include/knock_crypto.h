@@ -10,6 +10,8 @@ struct knock_sig_input {
     __u32 session_id_hi;
     __u32 session_id_lo;
     __u32 nonce;
+    __u16 bind_src_port;
+    __u16 bind_dst_port;
 };
 
 static __inline __u64 knock_rotl64(__u64 x, __u8 b)
@@ -89,9 +91,12 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
                ((in->session_id_hi >> 8) & 0x00ffffffU);
     __u64 m2 = ((__u64)(in->session_id_hi & 0x000000ffU) << 56) |
                ((__u64)in->session_id_lo << 24) |
+               ((__u64)in->bind_src_port << 8) |
+               (__u64)(in->bind_dst_port >> 8);
+    __u64 m3 = ((__u64)(in->bind_dst_port & 0x00ffU) << 56) |
                0x0053474e31ULL;
     __u64 h0 = knock_siphash24_16b(k0 ^ k2, k1 ^ k3, m0, m1, 0x0101010101010101ULL);
-    __u64 h1 = knock_siphash24_16b(k0 ^ ~k2, k1 ^ ~k3, m2, m0, 0x0202020202020202ULL);
+    __u64 h1 = knock_siphash24_16b(k0 ^ ~k2, k1 ^ ~k3, m2, m3, 0x0202020202020202ULL);
 
     out[0] = (__u32)(h0 >> 32);
     out[1] = (__u32)(h0 & 0xffffffffU);

@@ -19,6 +19,7 @@
 
 #define KNOCK_PKT_AUTH 1U
 #define KNOCK_PKT_DEAUTH 2U
+#define KNOCK_PKT_BIND 3U
 
 #define KNOCK_USER_ID_SHIFT 16U
 #define KNOCK_USER_ID_MASK 0xffff0000U
@@ -31,6 +32,9 @@ struct knock_packet {
     __u8 reserved[3];
     __u32 session_id_hi;
     __u32 session_id_lo;
+    __u16 bind_src_port;
+    __u16 bind_dst_port;
+    __u32 bind_reserved;
     __u32 signature[KNOCK_SIGNATURE_WORDS];
 } __attribute__((packed));
 

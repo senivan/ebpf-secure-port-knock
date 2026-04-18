@@ -28,9 +28,10 @@ static void usage(const char *prog)
             "Usage: %s --ifname <iface> --src-ip <ip> --dst-ip <ip> --dst-port <port> --hmac-key <64-hex> [options]\n"
             "Options:\n"
             "  --src-port <port>            Source TCP port (default: 50000)\n"
-            "  --packet-type <auth|deauth>  Control packet type (default: auth)\n"
+            "  --packet-type <auth|deauth|bind>  Control packet type (default: auth)\n"
             "  --user-id <u16>              Numeric user ID (default for auth: 0)\n"
             "  --session-id <u64>           Session id (required for deauth, random for auth)\n"
+            "  --bind-port <port>           Protected service port (required for bind)\n"
             "  --nonce <u32>                Explicit nonce (default: random)\n"
             "  --timestamp-sec <u32>        Explicit monotonic timestamp (default: CLOCK_MONOTONIC)\n",
             prog);
@@ -44,6 +45,10 @@ static int parse_packet_type(const char *s, __u8 *packet_type)
     }
     if (strcmp(s, "deauth") == 0) {
         *packet_type = KNOCK_PKT_DEAUTH;
+        return 0;
+    }
+    if (strcmp(s, "bind") == 0) {
+        *packet_type = KNOCK_PKT_BIND;
         return 0;
     }
     return -1;
@@ -93,6 +98,7 @@ int main(int argc, char **argv)
         {"hmac-key", required_argument, NULL, 'k'},
         {"nonce", required_argument, NULL, 'n'},
         {"timestamp-sec", required_argument, NULL, 't'},
+        {"bind-port", required_argument, NULL, 'b'},
         {NULL, 0, NULL, 0},
     };
 
@@ -102,6 +108,7 @@ int main(int argc, char **argv)
     const char *hmac_hex = NULL;
     uint16_t src_port = 50000;
     uint16_t dst_port = KNOCK_DEFAULT_PORT;
+    uint16_t bind_port = 0;
     __u8 packet_type = KNOCK_PKT_AUTH;
     __u32 user_id = 0;
     __u64 session_id = 0;
@@ -127,7 +134,7 @@ int main(int argc, char **argv)
     int opt;
     struct ifreq ifr;
 
-    while ((opt = getopt_long(argc, argv, "i:s:d:p:q:m:u:x:k:n:t:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "i:s:d:p:q:m:u:x:k:n:t:b:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'i':
             ifname = optarg;
@@ -194,6 +201,15 @@ int main(int argc, char **argv)
             ts = (uint32_t)strtoul(optarg, NULL, 10);
             have_ts = 1;
             break;
+        case 'b': {
+            unsigned long v = strtoul(optarg, NULL, 10);
+            if (v == 0 || v > 65535UL) {
+                fprintf(stderr, "error: invalid --bind-port\n");
+                return 1;
+            }
+            bind_port = (uint16_t)v;
+            break;
+        }
         default:
             usage(argv[0]);
             return 1;
@@ -242,6 +258,16 @@ int main(int argc, char **argv)
         fprintf(stderr, "error: --session-id is required for --packet-type deauth\n");
         return 1;
     }
+    if (packet_type == KNOCK_PKT_BIND) {
+        if (!have_session_id) {
+            fprintf(stderr, "error: --session-id is required for --packet-type bind\n");
+            return 1;
+        }
+        if (bind_port == 0) {
+            fprintf(stderr, "error: --bind-port is required for --packet-type bind\n");
+            return 1;
+        }
+    }
     if (!have_nonce) {
         if (random_u32(&nonce) != 0) {
             fprintf(stderr, "error: failed to generate random nonce: %s\n", strerror(errno));
@@ -269,6 +295,10 @@ int main(int argc, char **argv)
     kpkt.packet_type = packet_type;
     kpkt.session_id_hi = htonl((__u32)(session_id >> 32));
     kpkt.session_id_lo = htonl((__u32)(session_id & 0xffffffffULL));
+    if (packet_type == KNOCK_PKT_BIND) {
+        kpkt.bind_src_port = htons(src_port);
+        kpkt.bind_dst_port = htons(bind_port);
+    }
 
     {
         struct in_addr src_addr;
@@ -284,6 +314,10 @@ int main(int argc, char **argv)
         sig_in.session_id_hi = (__u32)(session_id >> 32);
         sig_in.session_id_lo = (__u32)(session_id & 0xffffffffULL);
         sig_in.nonce = nonce;
+        if (packet_type == KNOCK_PKT_BIND) {
+            sig_in.bind_src_port = src_port;
+            sig_in.bind_dst_port = bind_port;
+        }
         knock_signature_words(key, &sig_in, sig);
 
         for (size_t i = 0; i < KNOCK_SIGNATURE_WORDS; i++) {
