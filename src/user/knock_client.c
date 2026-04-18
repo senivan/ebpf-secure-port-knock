@@ -30,7 +30,7 @@ static void usage(const char *prog)
             "  --src-port <port>            Source TCP port (default: 50000)\n"
             "  --packet-type <auth|deauth|bind>  Control packet type (default: auth)\n"
             "  --user-id <u16>              Numeric user ID (default for auth: 0)\n"
-            "  --session-id <u64>           Session id (required for deauth, random for auth)\n"
+            "  --session-id <u64>           Session id (required for deauth/bind, random for auth)\n"
             "  --bind-port <port>           Protected service port (required for bind)\n"
             "  --nonce <u32>                Explicit nonce (default: random)\n"
             "  --timestamp-sec <u32>        Explicit monotonic timestamp (default: CLOCK_MONOTONIC)\n",
@@ -165,7 +165,7 @@ int main(int argc, char **argv)
         }
         case 'm':
             if (parse_packet_type(optarg, &packet_type) != 0) {
-                fprintf(stderr, "error: --packet-type must be auth or deauth\n");
+                fprintf(stderr, "error: --packet-type must be auth, deauth, or bind\n");
                 return 1;
             }
             break;

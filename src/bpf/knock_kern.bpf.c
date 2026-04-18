@@ -359,7 +359,12 @@ int port_knock_xdp(struct xdp_md *ctx)
                 new_sess.session_id_hi = session_id_hi;
                 new_sess.session_id_lo = session_id_lo;
                 new_sess.expires_at_ns = now_ns + ((__u64)cfg->timeout_ms * 1000000ULL);
-                bpf_map_update_elem(&active_session_map, &flow, &new_sess, 0);
+                if (!update_map_or_fail(stats ? &stats->map_update_fail : NULL,
+                                        &active_session_map,
+                                        &flow,
+                                        &new_sess)) {
+                    return XDP_DROP;
+                }
 
                 lookup_key.src_ip = iph->saddr;
                 lookup_key.session_id_hi = session_id_hi;
