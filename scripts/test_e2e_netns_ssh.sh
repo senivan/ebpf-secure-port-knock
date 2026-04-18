@@ -191,6 +191,25 @@ run_ssh_test() {
         "echo $marker" >/dev/null 2>&1
 }
 
+read_stat_counter() {
+    local name="$1"
+    bpftool map dump pinned /sys/fs/bpf/knock_gate/stats_map 2>/dev/null | \
+        awk -v n="$name" '
+            $0 ~ "\"" n "\"" {
+                split($0, a, ":");
+                gsub(/[^0-9]/, "", a[2]);
+                print (a[2] == "" ? 0 : a[2]);
+                found=1;
+                exit;
+            }
+            END {
+                if (!found) {
+                    print 0;
+                }
+            }
+        '
+}
+
 require_root
 require_cmd ip
 require_cmd ssh
@@ -229,7 +248,7 @@ LOADER_PID=$!
 
 sleep 2
 
-echo "[1/6] attacker cannot SSH before knock..."
+echo "[1/11] attacker cannot SSH before knock..."
 if run_ssh_test "$ATTACKER_NS" "attacker-pre"; then
     echo "fail: attacker unexpectedly reached SSH before authorization" >&2
     exit 1
@@ -237,7 +256,7 @@ else
     echo "ok: attacker blocked"
 fi
 
-echo "[2/6] client cannot SSH before knock..."
+echo "[2/11] client cannot SSH before knock..."
 if run_ssh_test "$CLIENT_NS" "client-pre"; then
     echo "fail: client unexpectedly reached SSH before knock" >&2
     exit 1
@@ -245,7 +264,7 @@ else
     echo "ok: client blocked before knock"
 fi
 
-echo "[3/6] client sends signed knock..."
+echo "[3/11] client sends signed auth..."
 TS="$(cut -d. -f1 /proc/uptime)"
 NONCE=271828
 ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
@@ -258,9 +277,15 @@ ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
   --hmac-key "$KEY" \
   >/tmp/knock_client_netns_ssh_test.log 2>&1
 
+SESSION_ID="$(sed -n 's/.*session_id=\([0-9][0-9]*\).*/\1/p' /tmp/knock_client_netns_ssh_test.log | head -n1)"
+if [[ -z "$SESSION_ID" ]]; then
+        echo "fail: unable to parse session_id from SSH auth output" >&2
+        exit 1
+fi
+
 sleep 1
 
-echo "[4/6] client can SSH after valid knock..."
+echo "[4/11] client can SSH after valid auth..."
 if run_ssh_test "$CLIENT_NS" "client-post"; then
     echo "ok: client authorized"
 else
@@ -270,7 +295,7 @@ else
     exit 1
 fi
 
-echo "[5/6] attacker remains blocked..."
+echo "[5/11] attacker remains blocked..."
 if run_ssh_test "$ATTACKER_NS" "attacker-post"; then
     echo "fail: attacker gained SSH access without authorization" >&2
     exit 1
@@ -278,7 +303,84 @@ else
     echo "ok: attacker still blocked"
 fi
 
-echo "[6/6] authorization timeout closes SSH access again..."
+DEAUTH_MISS_BEFORE_BAD="$(read_stat_counter deauth_miss)"
+
+BAD_SESSION_ID="$(python3 - <<PY
+sid = int("$SESSION_ID")
+print((sid + 1) & ((1 << 64) - 1))
+PY
+)"
+
+echo "[6/11] client sends signed deauth with wrong session id..."
+TS_DEAUTH_BAD="$(cut -d. -f1 /proc/uptime)"
+NONCE_DEAUTH_BAD=271827
+ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
+    --ifname "$CLIENT_NS_IF" \
+    --src-ip "$CLIENT_IP" \
+    --dst-ip "$EDGE_IP" \
+    --dst-port "$KNOCK_PORT" \
+    --packet-type deauth \
+    --session-id "$BAD_SESSION_ID" \
+    --timestamp-sec "$TS_DEAUTH_BAD" \
+    --nonce "$NONCE_DEAUTH_BAD" \
+    --hmac-key "$KEY" \
+    >/tmp/knock_client_netns_ssh_deauth_bad_test.log 2>&1
+
+sleep 1
+
+echo "[7/11] wrong-session deauth must be ignored by the kernel..."
+DEAUTH_MISS_AFTER_BAD="$(read_stat_counter deauth_miss)"
+if [[ "$DEAUTH_MISS_AFTER_BAD" -le "$DEAUTH_MISS_BEFORE_BAD" ]]; then
+    echo "fail: wrong-session deauth did not increment deauth_miss" >&2
+        exit 1
+fi
+echo "ok: wrong-session deauth ignored"
+
+echo "[8/11] client sends signed deauth for current session..."
+TS_DEAUTH="$(cut -d. -f1 /proc/uptime)"
+NONCE_DEAUTH=271829
+ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
+  --ifname "$CLIENT_NS_IF" \
+  --src-ip "$CLIENT_IP" \
+  --dst-ip "$EDGE_IP" \
+  --dst-port "$KNOCK_PORT" \
+  --packet-type deauth \
+  --session-id "$SESSION_ID" \
+  --timestamp-sec "$TS_DEAUTH" \
+  --nonce "$NONCE_DEAUTH" \
+  --hmac-key "$KEY" \
+  >/tmp/knock_client_netns_ssh_deauth_test.log 2>&1
+
+sleep 1
+
+echo "[9/11] deauth immediately closes SSH access..."
+if run_ssh_test "$CLIENT_NS" "client-deauth"; then
+    echo "fail: client still has SSH after deauth" >&2
+    exit 1
+else
+    echo "ok: client blocked after deauth"
+fi
+
+echo "[10/11] client reauthenticates for timeout fallback check..."
+TS2="$(cut -d. -f1 /proc/uptime)"
+NONCE2=271830
+ip netns exec "$CLIENT_NS" "$ROOT_DIR/build/knock-client" \
+  --ifname "$CLIENT_NS_IF" \
+  --src-ip "$CLIENT_IP" \
+  --dst-ip "$EDGE_IP" \
+  --dst-port "$KNOCK_PORT" \
+  --timestamp-sec "$TS2" \
+  --nonce "$NONCE2" \
+  --hmac-key "$KEY" \
+  >/tmp/knock_client_netns_ssh_reauth_test.log 2>&1
+
+sleep 1
+if ! run_ssh_test "$CLIENT_NS" "client-reauth"; then
+    echo "fail: client could not SSH after reauth" >&2
+    exit 1
+fi
+
+echo "[11/11] authorization timeout closes SSH access again..."
 sleep 4
 if run_ssh_test "$CLIENT_NS" "client-timeout"; then
     echo "fail: client still has SSH after timeout" >&2
