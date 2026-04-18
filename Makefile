@@ -15,17 +15,22 @@ USER_COMMON_SRCS := src/user/cli_common.c
 KNOCKD_SRCS := src/user/knock_user.c src/user/xdp_loader.c $(USER_COMMON_SRCS)
 KNOCK_CLIENT_SRCS := src/user/knock_client.c src/user/net_checksum.c $(USER_COMMON_SRCS)
 
-.PHONY: all clean run test test-netns test-ssh help
+.PHONY: all clean run test test-netns test-ssh test-user-auth test-user-rotation test-user-admin test-user-all all-test help
 
 all: $(BPF_OBJ) $(USER_BIN) $(KNOCK_CLIENT_BIN)
 
 help:
 	@echo "Targets:"
 	@echo "  make all          Build eBPF object + user-space binaries"
-	@echo "  make run IFACE= HMAC_KEY= PROTECT=   Attach XDP gate with signed knock config"
+	@echo "  make run IFACE= USERS_FILE= PROTECT= Attach XDP gate with per-user signed knock config"
 	@echo "  make test         Run integration smoke test (requires root)"
 	@echo "  make test-netns   Run network-namespace integration scenario (requires root)"
 	@echo "  make test-ssh     Run SSH functional netns scenario (requires root + sshd)"
+	@echo "  make test-user-auth      Run per-user registration/isolation tests (requires root)"
+	@echo "  make test-user-rotation  Run per-user key rotation tests (requires root)"
+	@echo "  make test-user-admin     Run per-user admin live-update tests (requires root)"
+	@echo "  make test-user-all       Run all per-user feature tests"
+	@echo "  make all-test            Run all test suites"
 	@echo "  make clean        Remove build artifacts"
 
 include/vmlinux.h:
@@ -44,12 +49,13 @@ $(KNOCK_CLIENT_BIN): $(KNOCK_CLIENT_SRCS) include/shared.h include/knock_crypto.
 	$(USER_CC) $(USER_CFLAGS) -Iinclude $(KNOCK_CLIENT_SRCS) -o $(KNOCK_CLIENT_BIN)
 
 run: all
-	@if [ -z "$(IFACE)" ] || [ -z "$(HMAC_KEY)" ] || [ -z "$(PROTECT)" ]; then \
-		echo "error: set IFACE, HMAC_KEY and PROTECT"; \
-		echo "example: make run IFACE=eth0 HMAC_KEY=<64hex> PROTECT=22,443 KNOCK_PORT=40000 TIMEOUT_MS=5000"; \
+	@if [ -z "$(IFACE)" ] || [ -z "$(USERS_FILE)" ] || [ -z "$(PROTECT)" ]; then \
+		echo "error: set IFACE, USERS_FILE and PROTECT"; \
+		echo "example: make run IFACE=eth0 USERS_FILE=/etc/knock/users.csv PROTECT=22,443 KNOCK_PORT=40000 TIMEOUT_MS=5000"; \
 		exit 1; \
 	fi
-	sudo ./$(USER_BIN) --ifname $(IFACE) --hmac-key $(HMAC_KEY) --protect $(PROTECT) \
+	sudo ./$(USER_BIN) daemon --ifname $(IFACE) --users-file $(USERS_FILE) --protect $(PROTECT) \
+		$(if $(HMAC_KEY),--hmac-key $(HMAC_KEY),) \
 		$(if $(KNOCK_PORT),--knock-port $(KNOCK_PORT),) \
 		$(if $(TIMEOUT_MS),--timeout-ms $(TIMEOUT_MS),) \
 		$(if $(REPLAY_WINDOW_MS),--replay-window-ms $(REPLAY_WINDOW_MS),) \
@@ -63,6 +69,19 @@ test-netns: all
 
 test-ssh: all
 	sudo ./scripts/test_e2e_netns_ssh.sh
+
+test-user-auth: all
+	sudo ./scripts/test_e2e_user_auth.sh
+
+test-user-rotation: all
+	sudo ./scripts/test_e2e_user_rotation.sh
+
+test-user-admin: all
+	sudo ./scripts/test_e2e_user_admin.sh
+
+test-user-all: test-user-auth test-user-rotation test-user-admin
+
+all-test: test test-netns test-ssh test-user-all
 
 clean:
 	rm -rf $(BUILD_DIR)
