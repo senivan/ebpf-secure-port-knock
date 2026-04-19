@@ -17,10 +17,13 @@ KNOCKD_SRCS := src/user/knock_user.c src/user/xdp_loader.c $(USER_COMMON_SRCS)
 KNOCK_CLIENT_SRCS := src/user/knock_client.c src/user/net_checksum.c $(USER_COMMON_SRCS)
 UNIT_TEST_CLI_COMMON := $(BUILD_DIR)/test_cli_common
 UNIT_TEST_NET_CHECKSUM := $(BUILD_DIR)/test_net_checksum
+UNIT_TEST_KNOCK_CRYPTO := $(BUILD_DIR)/test_knock_crypto
+UNIT_TEST_KNOCK_USER := $(BUILD_DIR)/test_knock_user
+UNIT_TEST_KNOCK_CLIENT := $(BUILD_DIR)/test_knock_client
 
 .PHONY: all clean run test test-netns test-ssh test-user-auth test-user-rotation test-user-admin test-user-all test-user-pressure test-config unit-test all-test help
 
-all: $(BPF_OBJ) $(USER_BIN) $(KNOCK_CLIENT_BIN) $(UNIT_TEST_CLI_COMMON) $(UNIT_TEST_NET_CHECKSUM)
+all: $(BPF_OBJ) $(USER_BIN) $(KNOCK_CLIENT_BIN) $(UNIT_TEST_CLI_COMMON) $(UNIT_TEST_NET_CHECKSUM) $(UNIT_TEST_KNOCK_CRYPTO) $(UNIT_TEST_KNOCK_USER) $(UNIT_TEST_KNOCK_CLIENT)
 
 help:
 	@echo "Targets:"
@@ -60,6 +63,15 @@ $(UNIT_TEST_CLI_COMMON): tests/test_cli_common.c src/user/cli_common.c include/s
 $(UNIT_TEST_NET_CHECKSUM): tests/test_net_checksum.c src/user/net_checksum.c src/user/net_checksum.h | $(BUILD_DIR)
 	$(USER_CC) $(TEST_CFLAGS) -Iinclude -Isrc/user tests/test_net_checksum.c src/user/net_checksum.c -o $(UNIT_TEST_NET_CHECKSUM)
 
+$(UNIT_TEST_KNOCK_CRYPTO): tests/test_knock_crypto.c include/shared.h include/knock_crypto.h | $(BUILD_DIR)
+	$(USER_CC) $(TEST_CFLAGS) -Iinclude -Isrc/user tests/test_knock_crypto.c -o $(UNIT_TEST_KNOCK_CRYPTO)
+
+$(UNIT_TEST_KNOCK_USER): tests/test_knock_user.c src/user/knock_user.c src/user/cli_common.c include/shared.h include/knock_crypto.h src/user/cli_common.h src/user/xdp_loader.h | $(BUILD_DIR)
+	$(USER_CC) $(TEST_CFLAGS) $(USER_CPPFLAGS) -Iinclude -Isrc/user tests/test_knock_user.c src/user/cli_common.c -o $(UNIT_TEST_KNOCK_USER)
+
+$(UNIT_TEST_KNOCK_CLIENT): tests/test_knock_client.c src/user/knock_client.c src/user/cli_common.c include/shared.h include/knock_crypto.h src/user/cli_common.h src/user/net_checksum.h | $(BUILD_DIR)
+	$(USER_CC) $(TEST_CFLAGS) -Iinclude -Isrc/user tests/test_knock_client.c src/user/cli_common.c -o $(UNIT_TEST_KNOCK_CLIENT)
+
 run: all
 	@if [ -z "$(IFACE)" ] || [ -z "$(USERS_FILE)" ] || [ -z "$(PROTECT)" ]; then \
 		echo "error: set IFACE, USERS_FILE and PROTECT"; \
@@ -97,9 +109,12 @@ test-config: all
 test-user-pressure: all
 	sudo bash ./scripts/test_e2e_user_pressure.sh
 
-unit-test: $(UNIT_TEST_CLI_COMMON) $(UNIT_TEST_NET_CHECKSUM)
+unit-test: $(UNIT_TEST_CLI_COMMON) $(UNIT_TEST_NET_CHECKSUM) $(UNIT_TEST_KNOCK_CRYPTO) $(UNIT_TEST_KNOCK_USER) $(UNIT_TEST_KNOCK_CLIENT)
 	./$(UNIT_TEST_CLI_COMMON)
 	./$(UNIT_TEST_NET_CHECKSUM)
+	./$(UNIT_TEST_KNOCK_CRYPTO)
+	./$(UNIT_TEST_KNOCK_USER)
+	./$(UNIT_TEST_KNOCK_CLIENT)
 
 test-user-all: test-user-auth test-user-rotation test-user-admin
 
