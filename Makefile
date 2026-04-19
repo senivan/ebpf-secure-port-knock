@@ -66,10 +66,10 @@ $(UNIT_TEST_NET_CHECKSUM): tests/test_net_checksum.c src/user/net_checksum.c src
 $(UNIT_TEST_KNOCK_CRYPTO): tests/test_knock_crypto.c include/shared.h include/knock_crypto.h | $(BUILD_DIR)
 	$(USER_CC) $(TEST_CFLAGS) -Iinclude -Isrc/user tests/test_knock_crypto.c -o $(UNIT_TEST_KNOCK_CRYPTO)
 
-$(UNIT_TEST_KNOCK_USER): tests/test_knock_user.c src/user/cli_common.c include/shared.h include/knock_crypto.h src/user/cli_common.h src/user/xdp_loader.h | $(BUILD_DIR)
-	$(USER_CC) $(TEST_CFLAGS) -Iinclude -Isrc/user tests/test_knock_user.c src/user/cli_common.c -o $(UNIT_TEST_KNOCK_USER)
+$(UNIT_TEST_KNOCK_USER): tests/test_knock_user.c src/user/knock_user.c src/user/cli_common.c include/shared.h include/knock_crypto.h src/user/cli_common.h src/user/xdp_loader.h | $(BUILD_DIR)
+	$(USER_CC) $(TEST_CFLAGS) $(USER_CPPFLAGS) -Iinclude -Isrc/user tests/test_knock_user.c src/user/cli_common.c -o $(UNIT_TEST_KNOCK_USER)
 
-$(UNIT_TEST_KNOCK_CLIENT): tests/test_knock_client.c src/user/cli_common.c include/shared.h include/knock_crypto.h src/user/cli_common.h src/user/net_checksum.h | $(BUILD_DIR)
+$(UNIT_TEST_KNOCK_CLIENT): tests/test_knock_client.c src/user/knock_client.c src/user/cli_common.c include/shared.h include/knock_crypto.h src/user/cli_common.h src/user/net_checksum.h | $(BUILD_DIR)
 	$(USER_CC) $(TEST_CFLAGS) -Iinclude -Isrc/user tests/test_knock_client.c src/user/cli_common.c -o $(UNIT_TEST_KNOCK_CLIENT)
 
 run: all
