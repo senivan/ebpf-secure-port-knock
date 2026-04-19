@@ -106,7 +106,7 @@ static __inline void knock_sha256_init(__u32 state[8])
     state[7] = 0x5be0cd19U;
 }
 
-static __inline void knock_sha256_transform(__u32 state[8], const __u8 block[64])
+static __inline void knock_sha256_transform_words(__u32 state[8], __u32 w[16])
 {
     __u32 a = state[0];
     __u32 b = state[1];
@@ -116,12 +116,7 @@ static __inline void knock_sha256_transform(__u32 state[8], const __u8 block[64]
     __u32 f = state[5];
     __u32 g = state[6];
     __u32 h = state[7];
-    __u32 w[16];
     __u32 i;
-
-    for (i = 0; i < 16; i++) {
-        w[i] = knock_load_be32(&block[i * 4]);
-    }
 
     for (i = 0; i < 64; i++) {
         __u32 s0;
@@ -166,8 +161,10 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
 {
     __u32 state[8];
     __u32 inner_digest[8];
-    __u8 block[64] = {};
+    __u32 w[16] = {};
     __u64 padded_len_bits = (64ULL + 32ULL) * 8ULL;
+    __u32 ipad_word = 0x36363636U;
+    __u32 opad_word = 0x5c5c5c5cU;
     __u32 i;
     __u64 m0 = ((__u64)in->timestamp_sec << 32) | (__u64)in->nonce;
     __u64 m1 = ((__u64)KNOCK_MAGIC << 32) |
@@ -180,53 +177,68 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
     __u64 m3 = ((__u64)(in->bind_dst_port & 0x00ffU) << 56) |
                0x0053474e31ULL;
 
-    for (i = 0; i < KNOCK_HMAC_KEY_LEN; i++) {
-        block[i] = key[i];
+    for (i = 0; i < 8; i++) {
+        __u32 kword = ((__u32)key[i * 4] << 24) |
+                      ((__u32)key[i * 4 + 1] << 16) |
+                      ((__u32)key[i * 4 + 2] << 8) |
+                      (__u32)key[i * 4 + 3];
+        w[i] = kword ^ ipad_word;
     }
-    for (i = 0; i < 64; i++) {
-        block[i] ^= 0x36U;
+    for (i = 8; i < 16; i++) {
+        w[i] = ipad_word;
     }
 
     knock_sha256_init(state);
-    knock_sha256_transform(state, block);
+    knock_sha256_transform_words(state, w);
 
-    for (i = 0; i < 64; i++) {
-        block[i] = 0;
-    }
-    knock_store_be64(&block[0], m0);
-    knock_store_be64(&block[8], m1);
-    knock_store_be64(&block[16], m2);
-    knock_store_be64(&block[24], m3);
-    block[32] = 0x80U;
-    knock_store_be64(&block[56], padded_len_bits);
-    knock_sha256_transform(state, block);
+    w[0] = (__u32)(m0 >> 32);
+    w[1] = (__u32)m0;
+    w[2] = (__u32)(m1 >> 32);
+    w[3] = (__u32)m1;
+    w[4] = (__u32)(m2 >> 32);
+    w[5] = (__u32)m2;
+    w[6] = (__u32)(m3 >> 32);
+    w[7] = (__u32)m3;
+    w[8] = 0x80000000U;
+    w[9] = 0;
+    w[10] = 0;
+    w[11] = 0;
+    w[12] = 0;
+    w[13] = 0;
+    w[14] = (__u32)(padded_len_bits >> 32);
+    w[15] = (__u32)padded_len_bits;
+    knock_sha256_transform_words(state, w);
 
     for (i = 0; i < 8; i++) {
         inner_digest[i] = state[i];
     }
 
-    for (i = 0; i < 64; i++) {
-        block[i] = 0;
+    for (i = 0; i < 8; i++) {
+        __u32 kword = ((__u32)key[i * 4] << 24) |
+                      ((__u32)key[i * 4 + 1] << 16) |
+                      ((__u32)key[i * 4 + 2] << 8) |
+                      (__u32)key[i * 4 + 3];
+        w[i] = kword ^ opad_word;
     }
-    for (i = 0; i < KNOCK_HMAC_KEY_LEN; i++) {
-        block[i] = key[i];
-    }
-    for (i = 0; i < 64; i++) {
-        block[i] ^= 0x5cU;
+    for (i = 8; i < 16; i++) {
+        w[i] = opad_word;
     }
 
     knock_sha256_init(state);
-    knock_sha256_transform(state, block);
+    knock_sha256_transform_words(state, w);
 
-    for (i = 0; i < 64; i++) {
-        block[i] = 0;
-    }
     for (i = 0; i < 8; i++) {
-        knock_store_be32(&block[i * 4], inner_digest[i]);
+        w[i] = inner_digest[i];
     }
-    block[32] = 0x80U;
-    knock_store_be64(&block[56], padded_len_bits);
-    knock_sha256_transform(state, block);
+    w[8] = 0x80000000U;
+    w[9] = 0;
+    w[10] = 0;
+    w[11] = 0;
+    w[12] = 0;
+    w[13] = 0;
+    w[14] = (__u32)(padded_len_bits >> 32);
+    w[15] = (__u32)padded_len_bits;
+    knock_sha256_transform_words(state, w);
 
     out[0] = state[0];
     out[1] = state[1];
