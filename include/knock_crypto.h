@@ -14,6 +14,12 @@ struct knock_sig_input {
     __u16 bind_dst_port;
 };
 
+struct knock_sig_scratch {
+    __u32 state[8];
+    __u32 inner_digest[8];
+    __u32 w[16];
+};
+
 static const __u32 knock_sha256_k[64] = {
     0x428a2f98U, 0x71374491U, 0xb5c0fbcfU, 0xe9b5dba5U,
     0x3956c25bU, 0x59f111f1U, 0x923f82a4U, 0xab1c5ed5U,
@@ -106,7 +112,7 @@ static __inline void knock_sha256_init(__u32 state[8])
     state[7] = 0x5be0cd19U;
 }
 
-static __inline void knock_sha256_transform_words(__u32 state[8], __u32 w[16])
+static __attribute__((always_inline)) __inline void knock_sha256_transform_words(__u32 state[8], __u32 w[16])
 {
     __u32 a = state[0];
     __u32 b = state[1];
@@ -155,58 +161,51 @@ static __inline void knock_sha256_transform_words(__u32 state[8], __u32 w[16])
     state[7] += h;
 }
 
-static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
-                                           const struct knock_sig_input *in,
-                                           __u32 out[KNOCK_SIGNATURE_WORDS])
+static __inline void knock_signature_words_scratch(const __u8 key[KNOCK_HMAC_KEY_LEN],
+                                                   const struct knock_sig_input *in,
+                                                   __u32 out[KNOCK_SIGNATURE_WORDS],
+                                                   struct knock_sig_scratch *scratch)
 {
-    __u32 state[8];
-    __u32 inner_digest[8];
-    __u32 w[16] = {};
-    __u64 padded_len_bits = (64ULL + 32ULL) * 8ULL;
-    __u32 ipad_word = 0x36363636U;
-    __u32 opad_word = 0x5c5c5c5cU;
+    __u32 *state = scratch->state;
+    __u32 *inner_digest = scratch->inner_digest;
+    __u32 *w = scratch->w;
+    __u32 final_len_bits = (64U + 32U) * 8U;
     __u32 i;
-    __u64 m0 = ((__u64)in->timestamp_sec << 32) | (__u64)in->nonce;
-    __u64 m1 = ((__u64)KNOCK_MAGIC << 32) |
-               ((__u64)in->packet_type << 24) |
-               ((in->session_id_hi >> 8) & 0x00ffffffU);
-    __u64 m2 = ((__u64)(in->session_id_hi & 0x000000ffU) << 56) |
-               ((__u64)in->session_id_lo << 24) |
-               ((__u64)in->bind_src_port << 8) |
-               (__u64)(in->bind_dst_port >> 8);
-    __u64 m3 = ((__u64)(in->bind_dst_port & 0x00ffU) << 56) |
-               0x0053474e31ULL;
+
+    for (i = 0; i < 16; i++) {
+        w[i] = 0;
+    }
 
     for (i = 0; i < 8; i++) {
         __u32 kword = ((__u32)key[i * 4] << 24) |
                       ((__u32)key[i * 4 + 1] << 16) |
                       ((__u32)key[i * 4 + 2] << 8) |
                       (__u32)key[i * 4 + 3];
-        w[i] = kword ^ ipad_word;
+        w[i] = kword ^ 0x36363636U;
     }
     for (i = 8; i < 16; i++) {
-        w[i] = ipad_word;
+        w[i] = 0x36363636U;
     }
 
     knock_sha256_init(state);
     knock_sha256_transform_words(state, w);
 
-    w[0] = (__u32)(m0 >> 32);
-    w[1] = (__u32)m0;
-    w[2] = (__u32)(m1 >> 32);
-    w[3] = (__u32)m1;
-    w[4] = (__u32)(m2 >> 32);
-    w[5] = (__u32)m2;
-    w[6] = (__u32)(m3 >> 32);
-    w[7] = (__u32)m3;
+    w[0] = in->timestamp_sec;
+    w[1] = in->nonce;
+    w[2] = KNOCK_MAGIC;
+    w[3] = ((__u32)in->packet_type << 24) | ((in->session_id_hi >> 8) & 0x00ffffffU);
+    w[4] = ((in->session_id_hi & 0x000000ffU) << 24) | ((in->session_id_lo >> 8) & 0x00ffffffU);
+    w[5] = ((in->session_id_lo & 0x000000ffU) << 24) | ((__u32)in->bind_src_port << 8) | (in->bind_dst_port >> 8);
+    w[6] = (__u32)(in->bind_dst_port & 0x00ffU) << 24;
+    w[7] = 0x53474e31U;
     w[8] = 0x80000000U;
     w[9] = 0;
     w[10] = 0;
     w[11] = 0;
     w[12] = 0;
     w[13] = 0;
-    w[14] = (__u32)(padded_len_bits >> 32);
-    w[15] = (__u32)padded_len_bits;
+    w[14] = 0;
+    w[15] = final_len_bits;
     knock_sha256_transform_words(state, w);
 
     for (i = 0; i < 8; i++) {
@@ -218,10 +217,10 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
                       ((__u32)key[i * 4 + 1] << 16) |
                       ((__u32)key[i * 4 + 2] << 8) |
                       (__u32)key[i * 4 + 3];
-        w[i] = kword ^ opad_word;
+        w[i] = kword ^ 0x5c5c5c5cU;
     }
     for (i = 8; i < 16; i++) {
-        w[i] = opad_word;
+        w[i] = 0x5c5c5c5cU;
     }
 
     knock_sha256_init(state);
@@ -236,14 +235,23 @@ static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
     w[11] = 0;
     w[12] = 0;
     w[13] = 0;
-    w[14] = (__u32)(padded_len_bits >> 32);
-    w[15] = (__u32)padded_len_bits;
+    w[14] = 0;
+    w[15] = final_len_bits;
     knock_sha256_transform_words(state, w);
 
     out[0] = state[0];
     out[1] = state[1];
     out[2] = state[2];
     out[3] = state[3];
+}
+
+static __inline void knock_signature_words(const __u8 key[KNOCK_HMAC_KEY_LEN],
+                                           const struct knock_sig_input *in,
+                                           __u32 out[KNOCK_SIGNATURE_WORDS])
+{
+    struct knock_sig_scratch scratch;
+
+    knock_signature_words_scratch(key, in, out, &scratch);
 }
 
 #endif /* KNOCK_CRYPTO_H */
