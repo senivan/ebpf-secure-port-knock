@@ -2,8 +2,19 @@ from flask import Blueprint, jsonify, request, current_app
 from flask_jwt_extended import jwt_required
 import subprocess
 import os
+import socket
+import ipaddress
+import time
 
 bp = Blueprint('test', __name__, url_prefix='/api/test')
+
+def _tcp_reachable(host: str, port: int, timeout: float = 3.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
 
 @bp.route('/knock-packet', methods=['POST'])
 @jwt_required()
@@ -75,25 +86,28 @@ def test_connectivity():
     """Test connectivity to a target"""
     try:
         data = request.get_json()
-        
-        if 'target' not in data:
+
+        if not data or 'target' not in data:
             return jsonify({'error': 'Missing target IP'}), 400
-        
+
         target = data['target']
-        port = data.get('port', 22)
-        
-        # Test ping
+        port = int(data.get('port', 22))
+
+        try:
+            ipaddress.ip_address(target)
+        except ValueError:
+            return jsonify({'error': 'Invalid target IP'}), 400
+
+        if port < 1 or port > 65535:
+            return jsonify({'error': 'Invalid port'}), 400
+
         ping_result = subprocess.run(
             ['ping', '-c', '1', '-W', '3', target],
             capture_output=True, text=True, timeout=5
         )
-        
-        # Test port connectivity using nc or telnet
-        nc_result = subprocess.run(
-            ['timeout', '3', 'bash', '-c', f'echo > /dev/tcp/{target}/{port}'],
-            capture_output=True, text=True, timeout=5
-        )
-        
+
+        port_open = _tcp_reachable(target, port)
+
         return jsonify({
             'target': target,
             'port': port,
@@ -101,9 +115,10 @@ def test_connectivity():
                 'success': ping_result.returncode == 0,
                 'output': ping_result.stdout[:200] if ping_result.stdout else None
             },
-            'port_open': nc_result.returncode == 0,
+            'port_open': port_open,
             'timestamp': int(time.time() * 1000)
         }), 200
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
