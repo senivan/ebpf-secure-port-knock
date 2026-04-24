@@ -31,14 +31,18 @@ def create_app():
     app = Flask(__name__)
     config = get_config()
     app.config.from_object(config)
-    
+
     # Initialize BPF accessor and store in app context
     app.bpf_accessor = get_bpf_accessor()
-    
+
     # Initialize extensions
     CORS(app)
     jwt = JWTManager(app)
-    
+
+    # Initialize rate limiter
+    from app.routes.auth import limiter
+    limiter.init_app(app)
+
     # Register blueprints
     from app.routes import auth, dashboard, config_routes, auth_ips, logs, test
     app.register_blueprint(auth.bp)
