@@ -68,6 +68,20 @@ For SSH, use the wrapper so it performs the auth knock, bind knock, and SSH sock
 
 If you are using the multi-user daemon, make sure `--user-id` matches the registered user. The wrapper defaults to password login; use `--ssh-auth publickey` if you want key-based SSH instead. It sends a keepalive renew packet every second so the SSH session stays authorized; override that with `--renew-interval-sec` if needed. The SSH source port defaults to `55411`; override it with `--ssh-src-port` if that port is busy.
 
+For HTTP(S), use the similar wrapper that performs auth/bind/renew and then runs one `curl` request from a fixed source port:
+
+```bash
+./scripts/knock_http.sh \
+	--ifname eth0 \
+	--src-ip 192.0.2.10 \
+	--dst-ip 192.0.2.20 \
+	--url https://192.0.2.20/health \
+	--user-id 100 \
+	--hmac-key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+```
+
+The HTTP wrapper keeps the session alive with `renew` packets while `curl` runs. Pass additional curl flags with `--curl-arg` or after `--`.
+
 Run integration smoke test (root required):
 
 ```bash
