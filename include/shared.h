@@ -84,6 +84,7 @@ struct active_session_state {
     __u32 session_id_hi;
     __u32 session_id_lo;
     __u64 expires_at_ns;
+    __u8 deleting;
 };
 
 struct replay_nonce_key {
