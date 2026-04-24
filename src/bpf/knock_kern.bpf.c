@@ -503,6 +503,7 @@ int port_knock_xdp(struct xdp_md *ctx)
                 new_sess.session_id_hi = session_id_hi;
                 new_sess.session_id_lo = session_id_lo;
                 new_sess.expires_at_ns = now_ns + ((__u64)cfg->timeout_ms * 1000000ULL);
+                new_sess.deleting = 0;
                 if (!update_map_or_fail(stats ? &stats->map_update_fail : NULL,
                                         &active_session_map,
                                         &flow,
@@ -533,10 +534,19 @@ int port_knock_xdp(struct xdp_md *ctx)
                     bump(stats ? &stats->deauth_miss : NULL);
                     return XDP_DROP;
                 }
-                bpf_map_delete_elem(&active_session_map, bound_flow);
-                bpf_map_delete_elem(&session_index_map, &deauth_key);
-                source_pressure_release_session(iph->saddr);
-                bump(stats ? &stats->knock_deauth : NULL);
+                    {
+                    struct active_session_state *old_sess;
+
+                    old_sess = bpf_map_lookup_elem(&active_session_map, bound_flow);
+                    if (old_sess) {
+                        old_sess->deleting = 1;
+                    }
+
+                    bpf_map_delete_elem(&session_index_map, &deauth_key);
+                    bpf_map_delete_elem(&active_session_map, bound_flow);
+                    source_pressure_release_session(iph->saddr);
+                    bump(stats ? &stats->knock_deauth : NULL);
+                }
             }
         }
 
@@ -549,16 +559,20 @@ int port_knock_xdp(struct xdp_md *ctx)
     }
 
     sess = bpf_map_lookup_elem(&active_session_map, &flow);
-    if (!sess) {
+    if (!sess || sess->deleting) {
         bump(stats ? &stats->protected_drop : NULL);
         return XDP_DROP;
     }
+
     if (sess->expires_at_ns < now_ns) {
         struct session_lookup_key lookup_key = {};
+
+        sess->deleting = 1;
 
         lookup_key.src_ip = iph->saddr;
         lookup_key.session_id_hi = sess->session_id_hi;
         lookup_key.session_id_lo = sess->session_id_lo;
+
         bpf_map_delete_elem(&session_index_map, &lookup_key);
         bpf_map_delete_elem(&active_session_map, &flow);
         source_pressure_release_session(iph->saddr);
