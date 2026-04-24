@@ -28,9 +28,9 @@ static void usage(const char *prog)
             "Usage: %s --ifname <iface> --src-ip <ip> --dst-ip <ip> --dst-port <port> --hmac-key <64-hex> [options]\n"
             "Options:\n"
             "  --src-port <port>            Source TCP port (default: 50000)\n"
-            "  --packet-type <auth|deauth|bind>  Control packet type (default: auth)\n"
+            "  --packet-type <auth|deauth|bind|renew>  Control packet type (default: auth)\n"
             "  --user-id <u16>              Numeric user ID (default for auth: 0)\n"
-            "  --session-id <u64>           Session id (required for deauth/bind, random for auth)\n"
+            "  --session-id <u64>           Session id (required for deauth/bind/renew, random for auth)\n"
             "  --bind-port <port>           Protected service port (required for bind)\n"
             "  --nonce <u32>                Explicit nonce (default: random)\n"
             "  --timestamp-sec <u32>        Explicit Unix epoch timestamp (default: CLOCK_REALTIME)\n",
@@ -49,6 +49,10 @@ static int parse_packet_type(const char *s, __u8 *packet_type)
     }
     if (strcmp(s, "bind") == 0) {
         *packet_type = KNOCK_PKT_BIND;
+        return 0;
+    }
+    if (strcmp(s, "renew") == 0) {
+        *packet_type = KNOCK_PKT_RENEW;
         return 0;
     }
     return -1;
@@ -165,7 +169,7 @@ int main(int argc, char **argv)
         }
         case 'm':
             if (parse_packet_type(optarg, &packet_type) != 0) {
-                fprintf(stderr, "error: --packet-type must be auth, deauth, or bind\n");
+                fprintf(stderr, "error: --packet-type must be auth, deauth, bind, or renew\n");
                 return 1;
             }
             break;
@@ -254,8 +258,9 @@ int main(int argc, char **argv)
         }
         ts = (uint32_t)now.tv_sec;
     }
-    if (packet_type == KNOCK_PKT_DEAUTH && !have_session_id) {
-        fprintf(stderr, "error: --session-id is required for --packet-type deauth\n");
+    if ((packet_type == KNOCK_PKT_DEAUTH || packet_type == KNOCK_PKT_RENEW) && !have_session_id) {
+        fprintf(stderr, "error: --session-id is required for --packet-type %s\n",
+                packet_type == KNOCK_PKT_DEAUTH ? "deauth" : "renew");
         return 1;
     }
     if (packet_type == KNOCK_PKT_BIND) {
@@ -379,16 +384,17 @@ int main(int argc, char **argv)
     }
 
     close(fd);
-         printf("Knock frame sent on %s to %s:%u from %s:%u\n", ifname, dst_ip_str, dst_port, src_ip_str, src_port);
-         printf("type=%s timestamp=%u session_id=%" PRIu64 " nonce=%u sig=%08x:%08x:%08x:%08x\n",
-             packet_type == KNOCK_PKT_DEAUTH ? "deauth" :
-             (packet_type == KNOCK_PKT_BIND ? "bind" : "auth"),
-            ts,
-            (uint64_t)session_id,
-            nonce,
-            sig[0],
-            sig[1],
-            sig[2],
-            sig[3]);
+    printf("Knock frame sent on %s to %s:%u from %s:%u\n", ifname, dst_ip_str, dst_port, src_ip_str, src_port);
+    printf("type=%s timestamp=%u session_id=%" PRIu64 " nonce=%u sig=%08x:%08x:%08x:%08x\n",
+           packet_type == KNOCK_PKT_DEAUTH ? "deauth" :
+           (packet_type == KNOCK_PKT_BIND ? "bind" :
+            (packet_type == KNOCK_PKT_RENEW ? "renew" : "auth")),
+           ts,
+           (uint64_t)session_id,
+           nonce,
+           sig[0],
+           sig[1],
+           sig[2],
+           sig[3]);
     return 0;
 }

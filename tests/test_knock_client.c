@@ -109,6 +109,16 @@ static void test_deauth_requires_session_id(void)
     ASSERT_EQ_INT(1, run_knock_client(11, argv));
 }
 
+static void test_renew_requires_session_id(void)
+{
+    static const char key[] = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+    char *argv[] = {(char *)"knock-client", (char *)"--ifname", (char *)"lo", (char *)"--src-ip", (char *)"127.0.0.1",
+                    (char *)"--dst-ip", (char *)"127.0.0.1", (char *)"--hmac-key", (char *)key, (char *)"--packet-type",
+                    (char *)"renew", NULL};
+
+    ASSERT_EQ_INT(1, run_knock_client(11, argv));
+}
+
 static void test_bind_requires_bind_port(void)
 {
     static const char key[] = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
@@ -129,6 +139,7 @@ int main(void)
     test_rejects_invalid_hmac_key_length();
     test_rejects_invalid_interface_name();
     test_deauth_requires_session_id();
+    test_renew_requires_session_id();
     test_bind_requires_bind_port();
     puts("test_knock_client: ok");
     return 0;

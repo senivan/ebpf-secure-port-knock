@@ -365,7 +365,8 @@ int port_knock_xdp(struct xdp_md *ctx)
             return XDP_DROP;
         }
 
-        if (packet_type != KNOCK_PKT_AUTH && packet_type != KNOCK_PKT_DEAUTH && packet_type != KNOCK_PKT_BIND) {
+        if (packet_type != KNOCK_PKT_AUTH && packet_type != KNOCK_PKT_DEAUTH &&
+            packet_type != KNOCK_PKT_BIND && packet_type != KNOCK_PKT_RENEW) {
             bump(stats ? &stats->key_mismatch : NULL);
             return XDP_DROP;
         }
@@ -522,6 +523,43 @@ int port_knock_xdp(struct xdp_md *ctx)
                 }
                 bpf_map_delete_elem(&pending_auth_map, &pending_key);
                 bump(stats ? &stats->knock_valid : NULL);
+            } else if (packet_type == KNOCK_PKT_RENEW) {
+                struct session_lookup_key renew_key = {};
+                struct flow_key *bound_flow;
+                struct active_session_state *renew_sess;
+                __u64 renewed_expires_at;
+
+                renew_key.src_ip = iph->saddr;
+                renew_key.session_id_hi = session_id_hi;
+                renew_key.session_id_lo = session_id_lo;
+                bound_flow = bpf_map_lookup_elem(&session_index_map, &renew_key);
+                if (!bound_flow) {
+                    bump(stats ? &stats->deauth_miss : NULL);
+                    return XDP_DROP;
+                }
+
+                renew_sess = bpf_map_lookup_elem(&active_session_map, bound_flow);
+                if (!renew_sess || renew_sess->deleting) {
+                    bpf_map_delete_elem(&session_index_map, &renew_key);
+                    if (renew_sess) {
+                        bpf_map_delete_elem(&active_session_map, bound_flow);
+                    }
+                    bump(stats ? &stats->session_timeout_drop : NULL);
+                    return XDP_DROP;
+                }
+
+                if (renew_sess->expires_at_ns < now_ns) {
+                    renew_sess->deleting = 1;
+                    bpf_map_delete_elem(&session_index_map, &renew_key);
+                    bpf_map_delete_elem(&active_session_map, bound_flow);
+                    source_pressure_release_session(iph->saddr);
+                    bump(stats ? &stats->session_timeout_drop : NULL);
+                    return XDP_DROP;
+                }
+
+                renewed_expires_at = now_ns + ((__u64)cfg->timeout_ms * 1000000ULL);
+                renew_sess->expires_at_ns = renewed_expires_at;
+                bump(stats ? &stats->knock_valid : NULL);
             } else {
                 struct session_lookup_key deauth_key = {};
                 struct flow_key *bound_flow;
@@ -534,7 +572,7 @@ int port_knock_xdp(struct xdp_md *ctx)
                     bump(stats ? &stats->deauth_miss : NULL);
                     return XDP_DROP;
                 }
-                    {
+                {
                     struct active_session_state *old_sess;
 
                     old_sess = bpf_map_lookup_elem(&active_session_map, bound_flow);
