@@ -1,3 +1,4 @@
+import hmac
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -24,11 +25,10 @@ def login():
     username = data['username']
     password = data['password']
     
-    # Check credentials from environment or hardcoded
     config_user = current_app.config.get('ADMIN_USERNAME', 'admin')
     config_pass = current_app.config.get('ADMIN_PASSWORD', 'changeme123')
-    
-    if username == config_user and password == config_pass:
+
+    if username == config_user and hmac.compare_digest(password, config_pass):
         access_token = create_access_token(identity=username)
         return jsonify({
             'message': 'Login successful',
