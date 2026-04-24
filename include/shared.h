@@ -33,6 +33,7 @@ typedef int64_t __s64;
 #define KNOCK_PKT_AUTH 1U
 #define KNOCK_PKT_DEAUTH 2U
 #define KNOCK_PKT_BIND 3U
+#define KNOCK_PKT_RENEW 4U
 
 #define KNOCK_USER_ID_SHIFT 16U
 #define KNOCK_USER_ID_MASK 0xffff0000U

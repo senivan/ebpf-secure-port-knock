@@ -54,6 +54,20 @@ sudo ./build/knock-client \
 	--hmac-key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
 ```
 
+For SSH, use the wrapper so it performs the auth knock, bind knock, and SSH socket bind in one step:
+
+```bash
+./scripts/knock_ssh.sh \
+	--ifname eth0 \
+	--src-ip 192.0.2.10 \
+	--dst-ip 192.0.2.20 \
+	--ssh-target user@192.0.2.20 \
+	--user-id 100 \
+	--hmac-key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+```
+
+If you are using the multi-user daemon, make sure `--user-id` matches the registered user. The wrapper defaults to password login; use `--ssh-auth publickey` if you want key-based SSH instead. It sends a keepalive renew packet every second so the SSH session stays authorized; override that with `--renew-interval-sec` if needed. The SSH source port defaults to `55411`; override it with `--ssh-src-port` if that port is busy.
+
 Run integration smoke test (root required):
 
 ```bash
@@ -78,7 +92,7 @@ Implemented in the starter XDP program:
 Implemented in userspace:
 
 - `build/knockd`: daemon mode loader plus user admin commands (`register-user`, `rotate-user-key`, `revoke-user`, `list-users`).
-- `build/knock-client`: raw packet sender for signed knock packets; auth packets require `--user-id` unless explicit `--session-id` is provided.
+- `build/knock-client`: raw packet sender for signed knock packets; auth packets require `--user-id` unless explicit `--session-id` is provided. Supports explicit `renew` keepalive packets for session refresh.
 - `scripts/test_e2e.sh`: smoke test that checks blocked-before-knock and allowed-after-knock behavior on loopback.
 - `scripts/test_e2e_netns.sh`: network-namespace scenario with separate client and attacker hosts over a virtual L2 topology.
 - `scripts/test_e2e_netns_ssh.sh`: network-namespace functional scenario using real SSH client/server flow through the protected port.
