@@ -3,6 +3,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+INSECURE_SECRET_VALUES = {
+    'dev-secret-key-change-me',
+    'replace-this-secret-key',
+    'your-secret-key-change-me',
+    'your-secret-key-change-in-production',
+}
+
+INSECURE_JWT_SECRET_VALUES = {
+    'jwt-secret-key-change-me',
+    'replace-this-jwt-secret',
+    'your-jwt-key-change-me',
+    'your-jwt-secret-key-change-in-production',
+}
+
+INSECURE_ADMIN_PASSWORD_VALUES = {
+    'changeme123',
+    'replace-this-password',
+}
+
 class Config:
     """Base configuration"""
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-me')
@@ -26,6 +45,7 @@ class Config:
     # Admin credentials
     ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
     ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'changeme123')
+    ADMIN_PASSWORD_HASH = os.getenv('ADMIN_PASSWORD_HASH')
     
     # API settings
     API_PORT = int(os.getenv('API_PORT', 5000))
@@ -57,3 +77,30 @@ def get_config():
     elif env == 'testing':
         return TestingConfig()
     return DevelopmentConfig()
+
+
+def validate_config(config):
+    """Reject insecure runtime defaults outside tests."""
+    if getattr(config, 'TESTING', False):
+        return
+
+    errors = []
+
+    if config.SECRET_KEY in INSECURE_SECRET_VALUES:
+        errors.append('SECRET_KEY must be changed from the repository default')
+
+    if config.JWT_SECRET_KEY in INSECURE_JWT_SECRET_VALUES:
+        errors.append('JWT_SECRET_KEY must be changed from the repository default')
+
+    if not config.ADMIN_USERNAME:
+        errors.append('ADMIN_USERNAME must be set')
+
+    if not config.ADMIN_PASSWORD and not config.ADMIN_PASSWORD_HASH:
+        errors.append('Set ADMIN_PASSWORD or ADMIN_PASSWORD_HASH')
+
+    if config.ADMIN_PASSWORD in INSECURE_ADMIN_PASSWORD_VALUES:
+        errors.append('ADMIN_PASSWORD must not use the repository default value')
+
+    if errors:
+        joined = '\n'.join(f'- {error}' for error in errors)
+        raise RuntimeError(f'Invalid admin-panel configuration:\n{joined}')

@@ -23,7 +23,7 @@ def client(app):
 def auth_token(client):
     response = client.post(
         '/api/auth/login',
-        json={'username': 'admin', 'password': 'changeme123'},
+        json={'username': 'admin', 'password': 'test-admin-password'},
         content_type='application/json',
     )
     return json.loads(response.data)['access_token']

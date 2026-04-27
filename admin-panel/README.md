@@ -43,7 +43,7 @@ Important environment variables:
 
 - `API_PORT` (default `5000`)
 - `ADMIN_USERNAME`
-- `ADMIN_PASSWORD`
+- `ADMIN_PASSWORD` or `ADMIN_PASSWORD_HASH`
 - `BPFFS_PATH` (default `/sys/fs/bpf`)
 - `BPF_MAP_PATH` (default `/sys/fs/bpf/knock_gate`)
 - `KNOCKD_BIN` (default `/home/user/ebpf-secure-port-knock/build/knockd`)

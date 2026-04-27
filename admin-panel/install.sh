@@ -179,9 +179,9 @@ ${BLUE}Next Steps:${NC}
    Frontend will be available at http://localhost:3000
 
 4. ${YELLOW}Login${NC}
-   Default credentials:
-   Username: admin
-   Password: changeme123
+   Credentials come from the backend environment.
+   Set ADMIN_USERNAME and ADMIN_PASSWORD before first login.
+   You can also use ADMIN_PASSWORD_HASH instead of ADMIN_PASSWORD.
 
 5. ${YELLOW}Run Tests${NC}
    After starting backend, run:
