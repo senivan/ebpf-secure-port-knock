@@ -125,6 +125,13 @@ class MockBPFMapAccessor:
             'timestamp': int(time.time() * 1000),
             'note': 'Demo mode - using mock data instead of real BPF maps'
         }
+
+    def get_auth_capabilities(self) -> Dict[str, Any]:
+        return {
+            'mode': 'mock',
+            'manual_authorize_supported': True,
+            'manual_revoke_supported': True,
+        }
     
     def get_config(self) -> Dict[str, Any]:
         """Get configuration (mock)"""

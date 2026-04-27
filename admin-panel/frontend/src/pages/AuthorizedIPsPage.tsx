@@ -9,6 +9,8 @@ export const AuthorizedIPsPage = () => {
   const [newIp, setNewIp] = useState('');
   const [duration, setDuration] = useState(5000);
   const [submitting, setSubmitting] = useState(false);
+  const [manualAuthorizeSupported, setManualAuthorizeSupported] = useState(true);
+  const [mode, setMode] = useState('unknown');
 
   useEffect(() => {
     loadIps();
@@ -20,6 +22,8 @@ export const AuthorizedIPsPage = () => {
     try {
       const data = await apiClient.getAuthorizedIps();
       setIps(data.authorized_ips || []);
+      setManualAuthorizeSupported(data.manual_authorize_supported ?? true);
+      setMode(data.mode || 'unknown');
       setError('');
     } catch (err: any) {
       setError(err.message || 'Failed to load IPs');
@@ -82,39 +86,52 @@ export const AuthorizedIPsPage = () => {
       )}
 
       {/* Add IP Form */}
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-        <h3 className="text-lg font-bold text-white mb-4">Authorize New IP</h3>
-        <form onSubmit={handleAddIp} className="flex gap-4 flex-wrap">
-          <input
-            type="text"
-            value={newIp}
-            onChange={(e) => setNewIp(e.target.value)}
-            placeholder="Enter IP address (e.g., 192.168.1.100)"
-            className="flex-1 min-w-[200px] px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
-            disabled={submitting}
-          />
-          <select
-            value={duration}
-            onChange={(e) => setDuration(Number(e.target.value))}
-            className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-            disabled={submitting}
-          >
-            <option value={5000}>5 seconds</option>
-            <option value={30000}>30 seconds</option>
-            <option value={60000}>1 minute</option>
-            <option value={300000}>5 minutes</option>
-            <option value={3600000}>1 hour</option>
-          </select>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:bg-slate-600 flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Authorize
-          </button>
-        </form>
-      </div>
+      {manualAuthorizeSupported ? (
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+          <h3 className="text-lg font-bold text-white mb-4">Authorize New IP</h3>
+          <form onSubmit={handleAddIp} className="flex gap-4 flex-wrap">
+            <input
+              type="text"
+              value={newIp}
+              onChange={(e) => setNewIp(e.target.value)}
+              placeholder="Enter IP address (e.g., 192.168.1.100)"
+              className="flex-1 min-w-[200px] px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+              disabled={submitting}
+            />
+            <select
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              disabled={submitting}
+            >
+              <option value={5000}>5 seconds</option>
+              <option value={30000}>30 seconds</option>
+              <option value={60000}>1 minute</option>
+              <option value={300000}>5 minutes</option>
+              <option value={3600000}>1 hour</option>
+            </select>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors disabled:bg-slate-600 flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Authorize
+            </button>
+          </form>
+        </div>
+      ) : (
+        <div className="bg-amber-950/30 border border-amber-700/60 rounded-lg p-6">
+          <h3 className="text-lg font-bold text-amber-200 mb-2">Manual Authorization Disabled</h3>
+          <p className="text-sm text-amber-100/80">
+            Live mode exposes active kernel sessions, but it cannot create standalone IP authorizations.
+            Revoke remains available for existing sessions.
+          </p>
+          <p className="text-xs text-amber-200/70 mt-2 uppercase tracking-[0.2em]">
+            Mode: {mode}
+          </p>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
