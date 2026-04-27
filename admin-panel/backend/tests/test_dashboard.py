@@ -55,10 +55,21 @@ class TestDashboard:
         response = client.get('/api/dashboard/interfaces',
             headers={'Authorization': f'Bearer {auth_token}'}
         )
-        assert response.status_code in [200, 500]  # May fail if BPF maps unavailable
-        if response.status_code == 200:
-            data = json.loads(response.data)
-            assert isinstance(data, (dict, list))
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert isinstance(data, dict)
+        assert 'interfaces' in data
+
+    def test_get_logs(self, client, auth_token):
+        """Test getting system logs"""
+        response = client.get(
+            '/api/dashboard/logs?lines=10',
+            headers={'Authorization': f'Bearer {auth_token}'}
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert isinstance(data, dict)
+        assert 'logs' in data
 
     def test_dashboard_requires_auth(self, client):
         """Test that dashboard requires authentication"""

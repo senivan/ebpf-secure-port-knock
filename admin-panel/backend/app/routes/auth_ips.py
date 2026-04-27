@@ -20,6 +20,7 @@ def list_authorized_ips():
     try:
         bpf = current_app.bpf_accessor
         ips = bpf.get_authorized_ips()
+        capabilities = bpf.get_auth_capabilities()
         
         # Filter out error entries and sort by TTL
         valid_ips = [ip for ip in ips if 'error' not in ip]
@@ -27,7 +28,10 @@ def list_authorized_ips():
         return jsonify({
             'authorized_ips': valid_ips,
             'total': len(valid_ips),
-            'active': len([ip for ip in valid_ips if ip.get('authorized')])
+            'active': len([ip for ip in valid_ips if ip.get('authorized')]),
+            'mode': capabilities.get('mode', 'unknown'),
+            'manual_authorize_supported': capabilities.get('manual_authorize_supported', True),
+            'manual_revoke_supported': capabilities.get('manual_revoke_supported', True),
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -57,7 +61,7 @@ def authorize_ip():
         if result.get('success'):
             return jsonify(result), 200
         else:
-            return jsonify(result), 500
+            return jsonify(result), result.get('status_code', 500)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -82,7 +86,7 @@ def revoke_ip():
         if result.get('success'):
             return jsonify(result), 200
         else:
-            return jsonify(result), 500
+            return jsonify(result), result.get('status_code', 500)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

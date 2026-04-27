@@ -1,12 +1,123 @@
+import ctypes
+import errno
 import json
 import os
+import platform
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+BPF_MAP_LOOKUP_ELEM = 1
+BPF_MAP_DELETE_ELEM = 3
+BPF_MAP_GET_NEXT_KEY = 4
+
+SYS_BPF_BY_ARCH = {
+    "x86_64": 321,
+    "amd64": 321,
+    "aarch64": 280,
+    "arm64": 280,
+}
+
+LIVE_MAP_NAMES = (
+    "config_map",
+    "active_session_map",
+    "session_index_map",
+    "stats_map",
+    "debug_knock_map",
+)
+
+COUNTER_FIELDS = (
+    "knock_seen",
+    "knock_short",
+    "knock_valid",
+    "knock_deauth",
+    "replay_drop",
+    "bind_drop",
+    "session_timeout_drop",
+    "deauth_miss",
+    "unknown_user",
+    "key_mismatch",
+    "grace_key_used",
+    "knock_rate_drop",
+    "session_limit_drop",
+    "map_update_fail",
+    "protected_drop",
+    "protected_pass",
+)
+
+
+class BPFAttrMapElem(ctypes.Structure):
+    _fields_ = [
+        ("map_fd", ctypes.c_uint32),
+        ("_pad", ctypes.c_uint32),
+        ("key", ctypes.c_uint64),
+        ("value_or_next_key", ctypes.c_uint64),
+        ("flags", ctypes.c_uint64),
+    ]
+
+
+class KnockConfig(ctypes.Structure):
+    _fields_ = [
+        ("knock_port", ctypes.c_uint16),
+        ("protected_count", ctypes.c_uint16),
+        ("protected_ports", ctypes.c_uint16 * 16),
+        ("timeout_ms", ctypes.c_uint32),
+        ("bind_window_ms", ctypes.c_uint32),
+        ("replay_window_ms", ctypes.c_uint32),
+        ("hmac_key", ctypes.c_ubyte * 32),
+    ]
+
+
+class FlowKey(ctypes.Structure):
+    _fields_ = [
+        ("src_ip", ctypes.c_uint32),
+        ("dst_ip", ctypes.c_uint32),
+        ("src_port", ctypes.c_uint16),
+        ("dst_port", ctypes.c_uint16),
+        ("l4_proto", ctypes.c_uint8),
+        ("pad", ctypes.c_uint8 * 3),
+    ]
+
+
+class ActiveSessionState(ctypes.Structure):
+    _fields_ = [
+        ("session_id_hi", ctypes.c_uint32),
+        ("session_id_lo", ctypes.c_uint32),
+        ("expires_at_ns", ctypes.c_uint64),
+        ("deleting", ctypes.c_uint8),
+    ]
+
+
+class SessionLookupKey(ctypes.Structure):
+    _fields_ = [
+        ("src_ip", ctypes.c_uint32),
+        ("session_id_hi", ctypes.c_uint32),
+        ("session_id_lo", ctypes.c_uint32),
+    ]
+
+
+class DebugCounters(ctypes.Structure):
+    _fields_ = [(field, ctypes.c_uint64) for field in COUNTER_FIELDS]
+
+
+class DebugKnockSnapshot(ctypes.Structure):
+    _fields_ = [
+        ("magic", ctypes.c_uint32),
+        ("timestamp_sec", ctypes.c_uint32),
+        ("nonce", ctypes.c_uint32),
+        ("packet_type", ctypes.c_uint32),
+        ("session_id_hi", ctypes.c_uint32),
+        ("session_id_lo", ctypes.c_uint32),
+        ("sig0", ctypes.c_uint32),
+        ("sig1", ctypes.c_uint32),
+        ("sig2", ctypes.c_uint32),
+        ("sig3", ctypes.c_uint32),
+    ]
 
 class BPFMapAccessor:
     """Access and manage eBPF maps for the knock system"""
@@ -44,6 +155,9 @@ class BPFMapAccessor:
             "hmac_key": "",
         }
         self.last_knock: Optional[Dict[str, Any]] = None
+        self._libc = ctypes.CDLL(None, use_errno=True)
+        self._libc.syscall.restype = ctypes.c_long
+        self._sys_bpf = SYS_BPF_BY_ARCH.get(platform.machine().lower())
 
     def _run_cmd(self, args: List[str], timeout: int = 8) -> subprocess.CompletedProcess:
         return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
@@ -300,56 +414,281 @@ class BPFMapAccessor:
             return 'xdp' in result.stdout
         except Exception:
             return False
+
+    def get_auth_capabilities(self) -> Dict[str, Any]:
+        return {
+            "mode": "live",
+            "manual_authorize_supported": False,
+            "manual_revoke_supported": True,
+        }
+
+    def _require_bpf_syscall(self) -> int:
+        if self._sys_bpf is None:
+            raise OSError(errno.ENOSYS, f"unsupported architecture for bpf syscall: {platform.machine()}")
+        return self._sys_bpf
+
+    def _bpf_syscall(self, cmd: int, attr: BPFAttrMapElem) -> None:
+        sys_bpf = self._require_bpf_syscall()
+        result = self._libc.syscall(sys_bpf, cmd, ctypes.byref(attr), ctypes.sizeof(attr))
+        if result != 0:
+            err = ctypes.get_errno()
+            raise OSError(err, os.strerror(err))
+
+    def _map_path(self, map_name: str) -> Path:
+        return self.bpf_path / map_name
+
+    def _open_map_fd(self, map_name: str) -> int:
+        return os.open(self._map_path(map_name), os.O_RDWR | getattr(os, "O_CLOEXEC", 0))
+
+    def _lookup_map_value(self, map_fd: int, key: Any, value_type: Any) -> Any:
+        value = value_type()
+        attr = BPFAttrMapElem(
+            map_fd=map_fd,
+            key=ctypes.addressof(key),
+            value_or_next_key=ctypes.addressof(value),
+            flags=0,
+        )
+        self._bpf_syscall(BPF_MAP_LOOKUP_ELEM, attr)
+        return value
+
+    def _delete_map_value(self, map_fd: int, key: Any) -> None:
+        attr = BPFAttrMapElem(
+            map_fd=map_fd,
+            key=ctypes.addressof(key),
+            value_or_next_key=0,
+            flags=0,
+        )
+        self._bpf_syscall(BPF_MAP_DELETE_ELEM, attr)
+
+    def _next_map_key(
+        self,
+        map_fd: int,
+        key_type: Any,
+        current_key: Optional[Any],
+    ) -> Optional[Any]:
+        next_key = key_type()
+        attr = BPFAttrMapElem(
+            map_fd=map_fd,
+            key=ctypes.addressof(current_key) if current_key is not None else 0,
+            value_or_next_key=ctypes.addressof(next_key),
+            flags=0,
+        )
+        try:
+            self._bpf_syscall(BPF_MAP_GET_NEXT_KEY, attr)
+        except OSError as exc:
+            if exc.errno == errno.ENOENT:
+                return None
+            raise
+        return next_key
+
+    def _iter_map_entries(
+        self,
+        map_name: str,
+        key_type: Any,
+        value_type: Any,
+    ) -> List[Any]:
+        entries: List[Any] = []
+        map_fd = self._open_map_fd(map_name)
+        try:
+            current_key = None
+            while True:
+                next_key = self._next_map_key(map_fd, key_type, current_key)
+                if next_key is None:
+                    break
+                try:
+                    value = self._lookup_map_value(map_fd, next_key, value_type)
+                    entries.append((next_key, value))
+                except OSError as exc:
+                    if exc.errno != errno.ENOENT:
+                        raise
+                current_key = next_key
+        finally:
+            os.close(map_fd)
+        return entries
+
+    def _read_singleton_map(self, map_name: str, value_type: Any) -> Any:
+        map_fd = self._open_map_fd(map_name)
+        try:
+            return self._lookup_map_value(map_fd, ctypes.c_uint32(0), value_type)
+        finally:
+            os.close(map_fd)
+
+    def _ipv4_from_u32(self, value: int) -> str:
+        return socket.inet_ntoa(value.to_bytes(4, "big"))
+
+    def _ipv4_to_u32(self, ip: str) -> int:
+        return int.from_bytes(socket.inet_aton(ip), "big")
+
+    def _struct_key_bytes(self, key: ctypes.Structure) -> bytes:
+        return ctypes.string_at(ctypes.addressof(key), ctypes.sizeof(key))
     
     def _are_maps_accessible(self) -> bool:
         """Check if BPF maps are accessible"""
-        config_map = self.bpf_path / "config_map"
-        auth_map = self.bpf_path / "auth_map"
-        return config_map.exists() and auth_map.exists()
+        return all(self._map_path(map_name).exists() for map_name in LIVE_MAP_NAMES)
     
     def get_config(self) -> Dict[str, Any]:
-        """Read current configuration from local admin state"""
+        """Read current configuration from local admin state and live maps when available"""
         cfg = self._load_local_config()
+        try:
+            if self._are_maps_accessible():
+                live_cfg = self._read_singleton_map("config_map", KnockConfig)
+                protected_count = min(int(live_cfg.protected_count), len(live_cfg.protected_ports))
+                cfg.update({
+                    "knock_port": int(live_cfg.knock_port),
+                    "protected_ports": [int(live_cfg.protected_ports[i]) for i in range(protected_count)],
+                    "timeout_ms": int(live_cfg.timeout_ms),
+                    "bind_window_ms": int(live_cfg.bind_window_ms),
+                    "replay_window_ms": int(live_cfg.replay_window_ms),
+                })
+                if any(live_cfg.hmac_key):
+                    cfg["hmac_key"] = bytes(live_cfg.hmac_key).hex()
+        except Exception as exc:
+            cfg["live_error"] = str(exc)
         cfg["protected_count"] = len(cfg.get("protected_ports", []))
         return cfg
     
     def get_authorized_ips(self) -> List[Dict[str, Any]]:
         """Get list of currently authorized IP addresses"""
-        return []
+        if not self._are_maps_accessible():
+            return []
+
+        now_ns = time.time_ns()
+        ip_entries: Dict[str, Dict[str, Any]] = {}
+        try:
+            for flow, session in self._iter_map_entries("active_session_map", FlowKey, ActiveSessionState):
+                ip = self._ipv4_from_u32(int(flow.src_ip))
+                expires_ns = int(session.expires_at_ns)
+                ttl_seconds = max(0, int((expires_ns - now_ns) / 1_000_000_000))
+                entry = ip_entries.setdefault(
+                    ip,
+                    {
+                        "ip": ip,
+                        "expires_ns": expires_ns,
+                        "ttl_seconds": ttl_seconds,
+                        "authorized": False,
+                        "session_count": 0,
+                    },
+                )
+                entry["session_count"] += 1
+                if expires_ns >= entry["expires_ns"]:
+                    entry["expires_ns"] = expires_ns
+                    entry["ttl_seconds"] = ttl_seconds
+                if not bool(session.deleting) and expires_ns > now_ns:
+                    entry["authorized"] = True
+
+            return sorted(
+                ip_entries.values(),
+                key=lambda item: (item.get("authorized", False), item.get("ttl_seconds", 0)),
+                reverse=True,
+            )
+        except Exception as exc:
+            return [{"error": str(exc)}]
     
     def get_debug_counters(self) -> Dict[str, Any]:
         """Get debug counters from kernel"""
-        return {
-            "knock_seen": 0,
-            "knock_short": 0,
-            "knock_valid": 0,
-            "replay_drop": 0,
-            "protected_drop": 0,
-            "protected_pass": 0,
-            "total_packets": 0,
-            "valid_percentage": 0,
-        }
+        counters = {field: 0 for field in COUNTER_FIELDS}
+        try:
+            if self._are_maps_accessible():
+                live_counters = self._read_singleton_map("stats_map", DebugCounters)
+                for field in COUNTER_FIELDS:
+                    counters[field] = int(getattr(live_counters, field))
+        except Exception as exc:
+            counters["error"] = str(exc)
+
+        counters["total_packets"] = counters.get("knock_seen", 0)
+        counters["valid_percentage"] = (
+            (counters.get("knock_valid", 0) / max(1, counters.get("knock_seen", 0))) * 100
+        )
+        return counters
     
     def get_last_knock_snapshot(self) -> Optional[Dict[str, Any]]:
         """Get last saw knock packet snapshot"""
-        return self.last_knock
+        if not self._are_maps_accessible():
+            return self.last_knock
+
+        try:
+            snap = self._read_singleton_map("debug_knock_map", DebugKnockSnapshot)
+        except Exception:
+            return self.last_knock
+
+        if int(snap.magic) == 0:
+            return self.last_knock
+
+        snapshot = {
+            "magic": int(snap.magic),
+            "timestamp_sec": int(snap.timestamp_sec),
+            "nonce": int(snap.nonce),
+            "packet_type": int(snap.packet_type),
+            "session_id_hi": int(snap.session_id_hi),
+            "session_id_lo": int(snap.session_id_lo),
+            "signature": [int(snap.sig0), int(snap.sig1), int(snap.sig2), int(snap.sig3)],
+        }
+        self.last_knock = snapshot
+        return snapshot
     
     def authorize_ip(self, ip: str, duration_ms: int = 5000) -> Dict[str, Any]:
         """Manually authorize an IP address"""
         return {
             "success": False,
-            "error": "Manual auth map writes are not implemented in real accessor",
+            "error": (
+                "Manual live authorization is unsupported: the XDP program authorizes "
+                "flow-bound sessions, not standalone IP entries"
+            ),
             "ip": ip,
             "duration_ms": duration_ms,
+            "status_code": 501,
         }
     
     def revoke_ip(self, ip: str) -> Dict[str, Any]:
         """Revoke authorization for an IP"""
-        return {
-            "success": False,
-            "error": "Manual auth map writes are not implemented in real accessor",
-            "ip": ip,
-        }
+        if not self._are_maps_accessible():
+            return {"success": False, "error": "Live BPF maps are not accessible", "ip": ip, "status_code": 503}
+
+        target_ip = self._ipv4_to_u32(ip)
+        session_keys: Dict[bytes, FlowKey] = {}
+        index_keys: Dict[bytes, SessionLookupKey] = {}
+
+        try:
+            for lookup_key, flow_key in self._iter_map_entries("session_index_map", SessionLookupKey, FlowKey):
+                if int(lookup_key.src_ip) != target_ip:
+                    continue
+                index_keys[self._struct_key_bytes(lookup_key)] = lookup_key
+                session_keys[self._struct_key_bytes(flow_key)] = flow_key
+
+            for flow_key, _session in self._iter_map_entries("active_session_map", FlowKey, ActiveSessionState):
+                if int(flow_key.src_ip) == target_ip:
+                    session_keys[self._struct_key_bytes(flow_key)] = flow_key
+
+            if not session_keys and not index_keys:
+                return {"success": False, "error": f"IP {ip} not found", "ip": ip, "status_code": 404}
+
+            session_fd = self._open_map_fd("active_session_map")
+            index_fd = self._open_map_fd("session_index_map")
+            try:
+                for lookup_key in index_keys.values():
+                    try:
+                        self._delete_map_value(index_fd, lookup_key)
+                    except OSError as exc:
+                        if exc.errno != errno.ENOENT:
+                            raise
+                for flow_key in session_keys.values():
+                    try:
+                        self._delete_map_value(session_fd, flow_key)
+                    except OSError as exc:
+                        if exc.errno != errno.ENOENT:
+                            raise
+            finally:
+                os.close(index_fd)
+                os.close(session_fd)
+
+            return {
+                "success": True,
+                "message": f"Revoked {len(session_keys)} active session(s) for {ip}",
+                "ip": ip,
+                "revoked_sessions": len(session_keys),
+            }
+        except Exception as exc:
+            return {"success": False, "error": str(exc), "ip": ip, "status_code": 500}
     
     def get_network_interfaces(self) -> List[Dict[str, str]]:
         """Get available network interfaces"""

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, request
 from flask_jwt_extended import jwt_required
 import time
 
@@ -71,6 +71,7 @@ def get_stats():
 def get_interfaces():
     """Get network interfaces"""
     try:
+        bpf = current_app.bpf_accessor
         interfaces = bpf.get_network_interfaces()
         return jsonify({'interfaces': interfaces}), 200
     except Exception as e:
@@ -81,6 +82,7 @@ def get_interfaces():
 def get_logs():
     """Get system logs"""
     try:
+        bpf = current_app.bpf_accessor
         lines = request.args.get('lines', 100, type=int)
         logs = bpf.get_system_logs(lines)
         return jsonify({'logs': logs}), 200
