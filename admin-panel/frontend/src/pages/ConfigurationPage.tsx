@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Save, Copy } from 'lucide-react';
+import { AlertTriangle, Save } from 'lucide-react';
 import apiClient from '../api/client';
 
 export const ConfigurationPage = () => {
-  const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -13,7 +12,8 @@ export const ConfigurationPage = () => {
     knock_port: '',
     protected_ports: '',
     timeout_ms: '',
-    hmac_key: ''
+    hmac_key: '',
+    restart_daemon: true
   });
 
   useEffect(() => {
@@ -23,12 +23,12 @@ export const ConfigurationPage = () => {
   const loadConfig = async () => {
     try {
       const data = await apiClient.getConfig();
-      setConfig(data);
       setFormData({
         knock_port: data.knock_port?.toString() || '',
         protected_ports: data.protected_ports?.join(',') || '',
         timeout_ms: data.timeout_ms?.toString() || '',
-        hmac_key: data.hmac_key || ''
+        hmac_key: data.hmac_key || '',
+        restart_daemon: true
       });
       setError('');
     } catch (err: any) {
@@ -71,11 +71,12 @@ export const ConfigurationPage = () => {
         return;
       }
 
-      const result = await apiClient.updateConfig({
+      await apiClient.updateConfig({
         knock_port: knockPort,
         protected_ports: protectedPorts,
         timeout_ms: timeoutMs,
-        hmac_key: formData.hmac_key
+        hmac_key: formData.hmac_key,
+        restart_daemon: formData.restart_daemon
       });
 
       setSuccess('Configuration updated successfully');
@@ -184,6 +185,21 @@ export const ConfigurationPage = () => {
                 Length: {formData.hmac_key.length} characters ({(formData.hmac_key.length / 2).toFixed(0)} bytes)
               </p>
             )}
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-slate-300 text-sm font-semibold">
+              <input
+                type="checkbox"
+                name="restart_daemon"
+                checked={formData.restart_daemon}
+                onChange={(e) => setFormData(prev => ({ ...prev, restart_daemon: e.target.checked }))}
+                disabled={!editing}
+                className="rounded border-slate-600 bg-slate-700"
+              />
+              Restart daemon after saving
+            </label>
+            <p className="text-slate-400 text-xs mt-1">Applies changes immediately by restarting knockd.</p>
           </div>
         </div>
 
