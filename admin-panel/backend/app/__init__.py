@@ -1,7 +1,8 @@
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-from config import get_config
+from werkzeug.security import generate_password_hash
+from config import get_config, validate_config
 
 def get_bpf_accessor():
     """Get BPF accessor (real or mock based on availability)"""
@@ -36,7 +37,11 @@ def create_app():
     """Application factory"""
     app = Flask(__name__)
     config = get_config()
+    validate_config(config)
     app.config.from_object(config)
+    app.config['ADMIN_PASSWORD_HASH'] = (
+        config.ADMIN_PASSWORD_HASH or generate_password_hash(config.ADMIN_PASSWORD)
+    )
 
     # Initialize BPF accessor and store in app context
     app.bpf_accessor = get_bpf_accessor()

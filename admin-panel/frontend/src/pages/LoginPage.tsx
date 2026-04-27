@@ -90,8 +90,7 @@ export const LoginPage = () => {
           {/* Footer */}
           <div className="mt-6 pt-6 border-t border-slate-700">
             <p className="text-center text-slate-400 text-sm">
-              Default credentials: <br />
-              <span className="text-slate-300 font-mono">admin / changeme123</span>
+              Credentials are configured on the backend via environment variables.
             </p>
           </div>
         </div>

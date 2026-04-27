@@ -4,6 +4,7 @@ Authentication API tests
 import pytest
 import json
 from app import create_app
+from werkzeug.security import generate_password_hash
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ class TestAuthentication:
     def test_login_success(self, client):
         """Test successful login with correct credentials"""
         response = client.post('/api/auth/login', 
-            json={'username': 'admin', 'password': 'changeme123'},
+            json={'username': 'admin', 'password': 'test-admin-password'},
             content_type='application/json'
         )
         assert response.status_code == 200
@@ -41,10 +42,19 @@ class TestAuthentication:
         )
         assert response.status_code == 401
 
+    def test_login_with_prehashed_password(self, app, client):
+        """Test login against a pre-hashed configured password"""
+        app.config['ADMIN_PASSWORD_HASH'] = generate_password_hash('hash-only-password')
+        response = client.post('/api/auth/login',
+            json={'username': 'admin', 'password': 'hash-only-password'},
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+
     def test_login_invalid_username(self, client):
         """Test login with invalid username"""
         response = client.post('/api/auth/login',
-            json={'username': 'invalid', 'password': 'changeme123'},
+            json={'username': 'invalid', 'password': 'test-admin-password'},
             content_type='application/json'
         )
         assert response.status_code == 401
@@ -61,7 +71,7 @@ class TestAuthentication:
         """Test token verification with valid token"""
         # First login to get token
         login_response = client.post('/api/auth/login',
-            json={'username': 'admin', 'password': 'changeme123'},
+            json={'username': 'admin', 'password': 'test-admin-password'},
             content_type='application/json'
         )
         token = json.loads(login_response.data)['access_token']
@@ -91,7 +101,7 @@ class TestAuthentication:
         """Test getting user info"""
         # First login
         login_response = client.post('/api/auth/login',
-            json={'username': 'admin', 'password': 'changeme123'},
+            json={'username': 'admin', 'password': 'test-admin-password'},
             content_type='application/json'
         )
         token = json.loads(login_response.data)['access_token']
