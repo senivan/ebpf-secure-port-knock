@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Play, AlertTriangle, CheckCircle } from 'lucide-react';
 import apiClient from '../api/client';
 

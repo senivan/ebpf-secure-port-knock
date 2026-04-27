@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Menu, X, LogOut, BarChart3, Settings, Lock, AlertCircle, FileText } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { LoginPage } from './pages/LoginPage';

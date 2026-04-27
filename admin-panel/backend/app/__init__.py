@@ -24,7 +24,16 @@ def get_bpf_accessor():
         return MockBPFMapAccessor()
     else:
         from app.bpf_accessor import BPFMapAccessor
-        return BPFMapAccessor()
+        return BPFMapAccessor(
+            bpf_path=config.BPF_MAP_PATH,
+            knockd_bin=config.KNOCKD_BIN,
+            config_store_path=config.KNOCKD_CONFIG_PATH,
+            daemon_log_path=config.KNOCKD_LOG_PATH,
+            use_sudo=config.KNOCKD_USE_SUDO,
+            default_ifname=config.KNOCKD_DEFAULT_IFACE,
+            default_users_file=config.KNOCKD_USERS_FILE,
+            default_pin_dir=config.KNOCKD_PIN_DIR,
+        )
 
 def create_app():
     """Application factory"""
@@ -44,13 +53,14 @@ def create_app():
     limiter.init_app(app)
 
     # Register blueprints
-    from app.routes import auth, dashboard, config_routes, auth_ips, logs, test
+    from app.routes import auth, dashboard, config_routes, auth_ips, logs, test, daemon
     app.register_blueprint(auth.bp)
     app.register_blueprint(dashboard.bp)
     app.register_blueprint(config_routes.bp)
     app.register_blueprint(auth_ips.bp)
     app.register_blueprint(logs.bp)
     app.register_blueprint(test.bp)
+    app.register_blueprint(daemon.bp)
     
     # Health check
     @app.route('/health', methods=['GET'])

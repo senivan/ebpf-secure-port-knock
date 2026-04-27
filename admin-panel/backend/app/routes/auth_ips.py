@@ -66,6 +66,7 @@ def authorize_ip():
 def revoke_ip():
     """Revoke authorization for an IP"""
     try:
+        bpf = current_app.bpf_accessor
         data = request.get_json()
         
         if 'ip' not in data:
@@ -90,6 +91,7 @@ def revoke_ip():
 def revoke_all():
     """Revoke all authorized IPs"""
     try:
+        bpf = current_app.bpf_accessor
         ips = bpf.get_authorized_ips()
         valid_ips = [ip for ip in ips if 'error' not in ip]
         
@@ -113,6 +115,7 @@ def revoke_all():
 def get_ip_info(ip):
     """Get information about a specific authorized IP"""
     try:
+        bpf = current_app.bpf_accessor
         if not is_valid_ip(ip):
             return jsonify({'error': f'Invalid IP address: {ip}'}), 400
         
@@ -131,6 +134,7 @@ def get_ip_info(ip):
 def get_stats():
     """Get authorization statistics"""
     try:
+        bpf = current_app.bpf_accessor
         ips = bpf.get_authorized_ips()
         valid_ips = [ip for ip in ips if 'error' not in ip]
         

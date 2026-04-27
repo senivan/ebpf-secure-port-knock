@@ -1,11 +1,6 @@
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 
 const API_BASE_URL = '/api';
-
-interface ApiResponse<T> {
-  data: T;
-  status: number;
-}
 
 class ApiClient {
   private baseURL = API_BASE_URL;
@@ -65,6 +60,42 @@ class ApiClient {
   async getStats() {
     const response = await axios.get(
       `${this.baseURL}/dashboard/stats`,
+      { headers: this.getHeaders() }
+    );
+    return response.data;
+  }
+
+  // Daemon endpoints
+  async getDaemonStatus() {
+    const response = await axios.get(
+      `${this.baseURL}/daemon/status`,
+      { headers: this.getHeaders() }
+    );
+    return response.data;
+  }
+
+  async startDaemon(config?: any) {
+    const response = await axios.post(
+      `${this.baseURL}/daemon/start`,
+      config || {},
+      { headers: this.getHeaders() }
+    );
+    return response.data;
+  }
+
+  async stopDaemon() {
+    const response = await axios.post(
+      `${this.baseURL}/daemon/stop`,
+      {},
+      { headers: this.getHeaders() }
+    );
+    return response.data;
+  }
+
+  async restartDaemon(config?: any) {
+    const response = await axios.post(
+      `${this.baseURL}/daemon/restart`,
+      config || {},
       { headers: this.getHeaders() }
     );
     return response.data;

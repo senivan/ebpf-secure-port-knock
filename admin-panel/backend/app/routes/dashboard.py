@@ -33,6 +33,7 @@ def get_status():
 def get_stats():
     """Get detailed statistics"""
     try:
+        bpf = current_app.bpf_accessor
         counters = bpf.get_debug_counters()
         auth_ips = bpf.get_authorized_ips()
         config = bpf.get_config()

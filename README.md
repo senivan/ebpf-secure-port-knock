@@ -18,6 +18,9 @@ This repository is a starter for a stealth gate model:
 - `src/user/net_checksum.c`: reusable IPv4/TCP checksum routines
 - `include/shared.h`: shared constants/types between user and kernel code
 - `include/knock_crypto.h`: shared signature primitive used by both kernel and userspace sender
+- `admin-panel/backend`: Flask admin API for status, config, daemon control, logs, and test helpers
+- `admin-panel/frontend`: React/Vite operator UI for the admin API
+- `admin-panel/README.md`: setup and usage notes for the admin panel
 - `scripts/gen_vmlinux_h.sh`: generates `include/vmlinux.h` from kernel BTF
 - `Makefile`: build and run entrypoints
 
@@ -110,6 +113,18 @@ Implemented in userspace:
 - `scripts/test_e2e.sh`: smoke test that checks blocked-before-knock and allowed-after-knock behavior on loopback.
 - `scripts/test_e2e_netns.sh`: network-namespace scenario with separate client and attacker hosts over a virtual L2 topology.
 - `scripts/test_e2e_netns_ssh.sh`: network-namespace functional scenario using real SSH client/server flow through the protected port.
+- `admin-panel/backend`: authenticated API for dashboard stats, config updates, daemon start/stop/restart, logs, auth-IP inspection, and test actions.
+- `admin-panel/frontend`: UI for dashboard visibility, daemon controls, config editing, log viewing, and test workflows.
+
+## Admin panel
+
+The repository also includes an operator-facing admin panel under `admin-panel/`.
+
+- The backend can run in `USE_MOCK_BPF=auto` mode and falls back to mock data when pinned maps are not present.
+- In live mode it can start, stop, and restart `knockd`, persist admin-side daemon config, and expose daemon status through `/api/daemon/*`.
+- The dashboard and configuration UI now include daemon controls and an optional "restart daemon after saving" flow.
+
+See `admin-panel/README.md` for setup details and environment variables.
 
 ## Per-user registration
 

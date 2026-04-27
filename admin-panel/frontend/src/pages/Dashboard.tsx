@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Activity, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Activity, Shield, CheckCircle, Power, RotateCcw } from 'lucide-react';
 import apiClient from '../api/client';
 
 export const Dashboard = () => {
@@ -7,6 +7,8 @@ export const Dashboard = () => {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [daemonBusy, setDaemonBusy] = useState(false);
+  const [daemonMessage, setDaemonMessage] = useState('');
 
   useEffect(() => {
     loadData();
@@ -27,6 +29,31 @@ export const Dashboard = () => {
       setError(err.message || 'Failed to load data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const controlDaemon = async (action: 'start' | 'stop' | 'restart') => {
+    setDaemonBusy(true);
+    setDaemonMessage('');
+    try {
+      let result: any = null;
+      if (action === 'start') {
+        result = await apiClient.startDaemon();
+      } else if (action === 'stop') {
+        result = await apiClient.stopDaemon();
+      } else {
+        result = await apiClient.restartDaemon();
+      }
+      if (result?.success) {
+        setDaemonMessage(`Daemon ${action} succeeded`);
+      } else {
+        setDaemonMessage(result?.error || `Daemon ${action} failed`);
+      }
+      await loadData();
+    } catch (err: any) {
+      setDaemonMessage(err?.response?.data?.error || err.message || `Daemon ${action} failed`);
+    } finally {
+      setDaemonBusy(false);
     }
   };
 
@@ -210,6 +237,45 @@ export const Dashboard = () => {
           <div>
             <p className="text-slate-400 text-sm mb-1">Map Utilization</p>
             <p className="text-3xl font-bold text-slate-300">{((stats?.authorization?.active_ips || 0) / Math.max(1, stats?.authorization?.total_entries || 1) * 100).toFixed(1)}%</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Daemon Controls */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-white">knockd Daemon</h3>
+            <p className="text-sm text-slate-400 mt-1">
+              Status: <span className={status?.knockd_running ? 'text-green-400' : 'text-yellow-400'}>{status?.knockd_running ? 'running' : 'stopped'}</span>
+            </p>
+            {daemonMessage && <p className="text-xs text-slate-300 mt-2">{daemonMessage}</p>}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => controlDaemon('start')}
+              disabled={daemonBusy}
+              className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:bg-slate-600 flex items-center gap-2"
+            >
+              <Power className="w-4 h-4" />
+              Start
+            </button>
+            <button
+              onClick={() => controlDaemon('stop')}
+              disabled={daemonBusy}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:bg-slate-600 flex items-center gap-2"
+            >
+              <Power className="w-4 h-4" />
+              Stop
+            </button>
+            <button
+              onClick={() => controlDaemon('restart')}
+              disabled={daemonBusy}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:bg-slate-600 flex items-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Restart
+            </button>
           </div>
         </div>
       </div>
