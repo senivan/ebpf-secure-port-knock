@@ -37,7 +37,8 @@ static void usage(const char *prog)
             "  --protect <p1,p2,...>        Comma-separated protected service ports\n"
             "  --timeout-ms <ms>            Session lifetime after bind (default: %u)\n"
             "  --bind-window-ms <ms>        Time to bind first protected flow (default: %u)\n"
-            "  --replay-window-ms <ms>      Replay reject window for control packets (default: %u, min: %u)\n",
+            "  --replay-window-ms <ms>      Replay reject window for control packets (default: %u, min: %u)\n"
+            "  --duration-sec <sec>         Exit after N seconds (default: 0 = run until signal)\n",
             prog,
             prog,
             prog,
@@ -300,7 +301,7 @@ static int cmd_daemon(int argc, char **argv)
         .xdp_flags = XDP_FLAGS_SKB_MODE,
     };
     struct knock_loader_handle loader_handle;
-    int duration_sec = 60;
+    int duration_sec = 0;
     int opt;
 
     optind = 1;
@@ -356,8 +357,8 @@ static int cmd_daemon(int argc, char **argv)
             break;
         case 'd':
             duration_sec = (int)strtol(optarg, NULL, 10);
-            if (duration_sec <= 0) {
-                fprintf(stderr, "error: --duration-sec must be > 0\n");
+            if (duration_sec < 0) {
+                fprintf(stderr, "error: --duration-sec must be >= 0\n");
                 return 1;
             }
             break;
@@ -420,9 +421,18 @@ static int cmd_daemon(int argc, char **argv)
     printf("Bind window: %u ms\n", cfg.bind_window_ms);
     printf("Replay window: %u ms\n", cfg.replay_window_ms);
     printf("Loaded users: %u\n", user_count);
-    printf("XDP program attached for %d second(s). Press Ctrl+C to stop early.\n", duration_sec);
+    if (duration_sec == 0) {
+        printf("XDP program attached. Running until signal.\n");
+    } else {
+        printf("warn: daemon will exit after %d second(s); use --duration-sec 0 for indefinite run.\n", duration_sec);
+        printf("XDP program attached for %d second(s). Press Ctrl+C to stop early.\n", duration_sec);
+    }
 
-    {
+    if (duration_sec == 0) {
+        while (!g_stop) {
+            sleep(1);
+        }
+    } else {
         time_t end_time = time(NULL) + duration_sec;
         while (!g_stop && time(NULL) < end_time) {
             sleep(1);

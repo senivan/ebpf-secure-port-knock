@@ -129,11 +129,11 @@ static void test_daemon_rejects_invalid_knock_port(void)
     ASSERT_EQ_INT(1, run_knock_user(10, argv));
 }
 
-static void test_daemon_rejects_invalid_duration(void)
+static void test_daemon_rejects_negative_duration(void)
 {
     static const char key[] = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
     char *argv[] = {(char *)"knockd", (char *)"daemon", (char *)"--ifname", (char *)"lo", (char *)"--protect",
-                    (char *)"22", (char *)"--hmac-key", (char *)key, (char *)"--duration-sec", (char *)"0", NULL};
+                    (char *)"22", (char *)"--hmac-key", (char *)key, (char *)"--duration-sec", (char *)"-1", NULL};
 
     ASSERT_EQ_INT(1, run_knock_user(10, argv));
 }
@@ -223,7 +223,7 @@ int main(void)
     test_unknown_subcommand_returns_error();
     test_daemon_requires_ifname_and_protect();
     test_daemon_rejects_invalid_knock_port();
-    test_daemon_rejects_invalid_duration();
+    test_daemon_rejects_negative_duration();
     test_daemon_rejects_invalid_hmac_key();
     test_daemon_requires_users_file_or_hmac_key();
     test_daemon_returns_loader_validate_failure();

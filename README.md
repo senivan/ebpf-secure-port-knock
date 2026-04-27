@@ -45,6 +45,9 @@ make run \
 	REPLAY_WINDOW_MS=30000
 ```
 
+The daemon now runs until it receives a signal. Use `DURATION_SEC=<n>` or
+`--duration-sec <n>` only for bounded test runs.
+
 Send a signed knock packet manually:
 
 ```bash
@@ -150,6 +153,9 @@ sudo ./build/knockd daemon \
 	--hmac-key 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
 	--protect 22,443
 ```
+
+Use `--duration-sec 0` to run indefinitely until `SIGINT` or `SIGTERM`. Any
+positive value is primarily useful for short-lived test scenarios.
 
 ## Runtime user key management
 
