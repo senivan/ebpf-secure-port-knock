@@ -75,6 +75,7 @@ def get_event(event_id):
 def get_system_logs():
     """Get system logs from journalctl/dmesg"""
     try:
+        bpf = current_app.bpf_accessor
         lines = request.args.get('lines', 50, type=int)
         logs = bpf.get_system_logs(lines)
         

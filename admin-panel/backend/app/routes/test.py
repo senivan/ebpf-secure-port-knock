@@ -40,7 +40,7 @@ def send_knock_packet():
             return jsonify({'error': 'HMAC key must be 64 hex characters'}), 400
         
         # Find knock-client binary
-        knock_client = '/home/user/Desktop/ebpf-secure-port-knock/build/knock-client'
+        knock_client = '/home/user/ebpf-secure-port-knock/build/knock-client'
         
         if not os.path.exists(knock_client):
             return jsonify({
@@ -127,6 +127,7 @@ def test_connectivity():
 def test_config_reload():
     """Test reloading configuration"""
     try:
+        bpf = current_app.bpf_accessor
         # Reload current config to verify it's still valid
         config = bpf.get_config()
         
@@ -149,6 +150,7 @@ def test_config_reload():
 def test_maps_integrity():
     """Test BPF maps integrity"""
     try:
+        bpf = current_app.bpf_accessor
         status = bpf.get_system_status()
         config = bpf.get_config()
         counters = bpf.get_debug_counters()
@@ -181,7 +183,7 @@ def test_maps_integrity():
 def test_system_health():
     """Test overall system health"""
     try:
-        import time
+        bpf = current_app.bpf_accessor
         status = bpf.get_system_status()
         config = bpf.get_config()
         

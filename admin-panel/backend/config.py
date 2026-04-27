@@ -12,7 +12,16 @@ class Config:
     
     # BPF Configuration
     BPFFS_PATH = os.getenv('BPFFS_PATH', '/sys/fs/bpf')
-    BPF_MAP_PATH = os.getenv('BPF_MAP_PATH', '/sys/fs/bpf/knock')
+    BPF_MAP_PATH = os.getenv('BPF_MAP_PATH', '/sys/fs/bpf/knock_gate')
+
+    # knockd integration
+    KNOCKD_BIN = os.getenv('KNOCKD_BIN', '/home/user/ebpf-secure-port-knock/build/knockd')
+    KNOCKD_CONFIG_PATH = os.getenv('KNOCKD_CONFIG_PATH', '/tmp/knock_admin_config.json')
+    KNOCKD_LOG_PATH = os.getenv('KNOCKD_LOG_PATH', '/tmp/knockd-admin.log')
+    KNOCKD_DEFAULT_IFACE = os.getenv('KNOCKD_DEFAULT_IFACE', 'eth0')
+    KNOCKD_USERS_FILE = os.getenv('KNOCKD_USERS_FILE', '')
+    KNOCKD_PIN_DIR = os.getenv('KNOCKD_PIN_DIR', '/sys/fs/bpf/knock_gate')
+    KNOCKD_USE_SUDO = os.getenv('KNOCKD_USE_SUDO', 'true').lower() in ['1', 'true', 'yes']
     
     # Admin credentials
     ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')

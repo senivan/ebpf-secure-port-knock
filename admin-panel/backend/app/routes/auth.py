@@ -3,8 +3,11 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask import current_app
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+limiter = Limiter(key_func=get_remote_address)
 
 # Simple in-memory user storage (in production, use a database)
 USERS = {
