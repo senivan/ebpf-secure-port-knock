@@ -2,7 +2,6 @@ from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from config import get_config
-from pathlib import Path
 
 def get_bpf_accessor():
     """Get BPF accessor (real or mock based on availability)"""
@@ -11,9 +10,7 @@ def get_bpf_accessor():
     # Check if we should use mock
     use_mock = config.USE_MOCK_BPF
     if use_mock == 'auto':
-        # Auto-detect: use mock if real maps don't exist
-        bpf_path = Path(config.BPF_MAP_PATH)
-        use_mock = not (bpf_path / "config_map").exists()
+        use_mock = bool(getattr(config, 'TESTING', False))
     elif use_mock in ['true', 'True', '1']:
         use_mock = True
     else:
@@ -65,6 +62,12 @@ def create_app():
     # Health check
     @app.route('/health', methods=['GET'])
     def health():
-        return {'status': 'ok', 'message': 'Admin panel is running'}, 200
+        if getattr(app.bpf_accessor, 'is_mock', False):
+            return {
+                'status': 'degraded',
+                'message': 'DEMO MODE - KERNEL GATE IS NOT ACTIVE',
+                'mode': 'mock',
+            }, 503
+        return {'status': 'ok', 'message': 'Admin panel is running', 'mode': 'live'}, 200
     
     return app

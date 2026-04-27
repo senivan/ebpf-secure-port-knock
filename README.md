@@ -123,7 +123,7 @@ Implemented in userspace:
 
 The repository also includes an operator-facing admin panel under `admin-panel/`.
 
-- The backend can run in `USE_MOCK_BPF=auto` mode and falls back to mock data when pinned maps are not present.
+- The backend can run in `USE_MOCK_BPF=auto` mode for tests, but non-test deployments must opt into mock mode explicitly.
 - In live mode it can start, stop, and restart `knockd`, persist admin-side daemon config, and expose daemon status through `/api/daemon/*`.
 - The dashboard and configuration UI now include daemon controls and an optional "restart daemon after saving" flow.
 

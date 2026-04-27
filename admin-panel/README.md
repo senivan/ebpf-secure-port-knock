@@ -33,9 +33,9 @@ bash setup.sh
 python run.py
 ```
 
-The backend auto-detects whether to use the live accessor or the mock accessor:
+The backend supports live and mock accessors:
 
-- `USE_MOCK_BPF=auto`: use mock mode if the configured pinned maps do not exist
+- `USE_MOCK_BPF=auto`: use mock mode only in tests
 - `USE_MOCK_BPF=true`: force mock/demo mode
 - `USE_MOCK_BPF=false`: require the live accessor
 

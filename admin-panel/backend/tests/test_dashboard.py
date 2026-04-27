@@ -38,8 +38,15 @@ class TestDashboard:
         )
         assert response.status_code == 200
         data = json.loads(response.data)
-        # Response is a dict with various keys; accept any response
         assert isinstance(data, dict)
+        assert data['system']['mock_mode'] is True
+        assert data['system']['system_status'] == 'DEMO MODE'
+
+    def test_health_reports_mock_mode(self, client):
+        response = client.get('/health')
+        assert response.status_code == 503
+        data = json.loads(response.data)
+        assert data['mode'] == 'mock'
 
     def test_get_stats(self, client, auth_token):
         """Test getting system statistics"""

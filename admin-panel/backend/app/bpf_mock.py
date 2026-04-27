@@ -9,6 +9,7 @@ class MockBPFMapAccessor:
     """Mock BPF map accessor that simulates the knock system without real BPF maps"""
     
     def __init__(self):
+        self.is_mock = True
         self.mock_data_file = Path("/tmp/knock_admin_mock.json")
         self.log_path = "/tmp/knockd-admin-mock.log"
         self.daemon_running = False
@@ -118,12 +119,13 @@ class MockBPFMapAccessor:
         daemon = self.get_daemon_status()
         return {
             'knockd_running': daemon['running'],
-            'xdp_enabled': True,
-            'maps_accessible': True,
+            'xdp_enabled': False,
+            'maps_accessible': False,
             'daemon': daemon,
-            'system_status': 'ACTIVE (MOCK)' if daemon['running'] else 'INACTIVE (MOCK)',
+            'system_status': 'DEMO MODE',
             'timestamp': int(time.time() * 1000),
-            'note': 'Demo mode - using mock data instead of real BPF maps'
+            'note': 'DEMO MODE - KERNEL GATE IS NOT ACTIVE',
+            'mock_mode': True,
         }
 
     def get_auth_capabilities(self) -> Dict[str, Any]:

@@ -65,10 +65,21 @@ export const Dashboard = () => {
     return <div className="text-center text-red-400 py-8">{error}</div>;
   }
 
-  const systemActive = status?.system_status === 'ACTIVE';
+  const system = status?.system || {};
+  const systemActive = system?.system_status === 'ACTIVE';
+  const mockMode = Boolean(system?.mock_mode);
 
   return (
     <div className="space-y-6">
+      {mockMode && (
+        <div className="bg-amber-950/40 border border-amber-700 rounded-lg p-4">
+          <p className="text-sm font-semibold text-amber-300">Demo Mode</p>
+          <p className="text-sm text-amber-100 mt-1">
+            {system?.note || 'DEMO MODE - KERNEL GATE IS NOT ACTIVE'}
+          </p>
+        </div>
+      )}
+
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* System Status */}
@@ -77,7 +88,7 @@ export const Dashboard = () => {
             <h3 className="text-slate-400 text-sm font-medium">System Status</h3>
             <Activity className={`w-5 h-5 ${systemActive ? 'text-green-500' : 'text-red-500'}`} />
           </div>
-          <p className="text-2xl font-bold text-white">{status?.system_status || 'N/A'}</p>
+          <p className="text-2xl font-bold text-white">{system?.system_status || 'N/A'}</p>
           <p className={`text-xs mt-2 ${systemActive ? 'text-green-400' : 'text-red-400'}`}>
             {systemActive ? '✓ All systems operational' : '✗ System offline'}
           </p>
@@ -87,11 +98,11 @@ export const Dashboard = () => {
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-slate-400 text-sm font-medium">XDP Program</h3>
-            <Shield className={`w-5 h-5 ${status?.xdp_enabled ? 'text-green-500' : 'text-yellow-500'}`} />
+            <Shield className={`w-5 h-5 ${system?.xdp_enabled ? 'text-green-500' : 'text-yellow-500'}`} />
           </div>
-          <p className="text-2xl font-bold text-white">{status?.xdp_enabled ? 'Attached' : 'Detached'}</p>
-          <p className={`text-xs mt-2 ${status?.xdp_enabled ? 'text-green-400' : 'text-yellow-400'}`}>
-            {status?.xdp_enabled ? '✓ XDP attached' : '⚠ XDP not attached'}
+          <p className="text-2xl font-bold text-white">{system?.xdp_enabled ? 'Attached' : 'Detached'}</p>
+          <p className={`text-xs mt-2 ${system?.xdp_enabled ? 'text-green-400' : 'text-yellow-400'}`}>
+            {system?.xdp_enabled ? '✓ XDP attached' : '⚠ XDP not attached'}
           </p>
         </div>
 
@@ -247,7 +258,7 @@ export const Dashboard = () => {
           <div>
             <h3 className="text-lg font-bold text-white">knockd Daemon</h3>
             <p className="text-sm text-slate-400 mt-1">
-              Status: <span className={status?.knockd_running ? 'text-green-400' : 'text-yellow-400'}>{status?.knockd_running ? 'running' : 'stopped'}</span>
+              Status: <span className={system?.knockd_running ? 'text-green-400' : 'text-yellow-400'}>{system?.knockd_running ? 'running' : 'stopped'}</span>
             </p>
             {daemonMessage && <p className="text-xs text-slate-300 mt-2">{daemonMessage}</p>}
           </div>
