@@ -157,12 +157,15 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
 
 int knock_loader_refresh_time_offset(struct bpf_object *obj)
 {
+
+    struct timespec mono_now;
+    struct timespec real_now;
+    struct time_offset_state time_offset = {};
     __u32 key = 0;
     int map_fd;
-
     if (!obj) {
         return -1;
-    }
+    }    
 
     if (clock_gettime(CLOCK_MONOTONIC, &mono_now) != 0 ||
         clock_gettime(CLOCK_REALTIME, &real_now) != 0) {
@@ -193,9 +196,6 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
                         struct knock_loader_handle *handle)
 {
     struct bpf_program *prog;
-    struct timespec mono_now;
-    struct timespec real_now;
-    struct time_offset_state time_offset = {};
     int map_fd;
     int prog_fd;
     __u32 key = 0;
