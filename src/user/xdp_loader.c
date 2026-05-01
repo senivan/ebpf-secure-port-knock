@@ -157,9 +157,6 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
 
 int knock_loader_refresh_time_offset(struct bpf_object *obj)
 {
-    struct timespec mono_now;
-    struct timespec real_now;
-    struct time_offset_state time_offset = {};
     __u32 key = 0;
     int map_fd;
 
