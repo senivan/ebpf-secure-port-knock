@@ -426,7 +426,9 @@ int port_knock_xdp(struct xdp_md *ctx)
             if (!valid) {
                 return XDP_DROP;
             }
-
+            
+            __builtin_memset(&knock_scratch->replay_key, 0, sizeof(knock_scratch->replay_key)); // zero-initialize before field assignment
+            
             knock_scratch->replay_key.src_ip = iph->saddr;
             knock_scratch->replay_key.nonce = nonce_host;
             knock_scratch->replay_key.packet_type = packet_type;
