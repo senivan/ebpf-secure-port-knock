@@ -154,6 +154,41 @@ static void pin_maps_if_possible(struct bpf_object *obj, const char *pin_dir)
     }
 }
 
+
+int knock_loader_refresh_time_offset(struct bpf_object *obj)
+{
+    struct timespec mono_now;
+    struct timespec real_now;
+    struct time_offset_state time_offset = {};
+    __u32 key = 0;
+    int map_fd;
+
+    if (!obj) {
+        return -1;
+    }
+
+    if (clock_gettime(CLOCK_MONOTONIC, &mono_now) != 0 ||
+        clock_gettime(CLOCK_REALTIME, &real_now) != 0) {
+        fprintf(stderr, "error: failed to read system clocks: %s\n", strerror(errno));
+        return -1;
+    }
+
+    map_fd = bpf_object__find_map_fd_by_name(obj, "time_offset_map");
+    if (map_fd < 0) {
+        fprintf(stderr, "error: failed to find time_offset_map\n");
+        return -1;
+    }
+
+    time_offset.realtime_offset_sec = (__s64)real_now.tv_sec - (__s64)mono_now.tv_sec;
+
+    if (bpf_map_update_elem(map_fd, &key, &time_offset, BPF_ANY) != 0) {
+        fprintf(stderr, "error: failed to refresh time_offset_map: %s\n", strerror(errno));
+        return -1;
+    }
+
+    return 0;
+}
+
 int knock_loader_attach(const struct knock_loader_opts *opts,
                         const struct knock_config *cfg,
                         const struct knock_user_record *users,
@@ -209,30 +244,12 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
         return -1;
     }
 
-    if (clock_gettime(CLOCK_MONOTONIC, &mono_now) != 0 ||
-        clock_gettime(CLOCK_REALTIME, &real_now) != 0) {
-        fprintf(stderr, "error: failed to read system clocks: %s\n", strerror(errno));
+    if (knock_loader_refresh_time_offset(handle->obj) != 0) {
         bpf_object__close(handle->obj);
         handle->obj = NULL;
         return -1;
     }
-
-    map_fd = bpf_object__find_map_fd_by_name(handle->obj, "time_offset_map");
-    if (map_fd < 0) {
-        fprintf(stderr, "error: failed to find time_offset_map\n");
-        bpf_object__close(handle->obj);
-        handle->obj = NULL;
-        return -1;
-    }
-
-    time_offset.realtime_offset_sec = (__s64)real_now.tv_sec - (__s64)mono_now.tv_sec;
-    if (bpf_map_update_elem(map_fd, &key, &time_offset, BPF_ANY) != 0) {
-        fprintf(stderr, "error: failed to push time offset into time_offset_map: %s\n", strerror(errno));
-        bpf_object__close(handle->obj);
-        handle->obj = NULL;
-        return -1;
-    }
-
+    
     if (users && user_count > 0) {
         int user_map_fd = bpf_object__find_map_fd_by_name(handle->obj, "user_key_map");
         __u32 i;
