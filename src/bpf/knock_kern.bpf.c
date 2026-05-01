@@ -36,7 +36,7 @@ struct {
 } session_index_map SEC(".maps");
 
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 8192);
     __type(key, struct replay_nonce_key);
     __type(value, struct replay_nonce_state);
