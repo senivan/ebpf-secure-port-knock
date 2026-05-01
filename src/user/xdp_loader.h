@@ -27,6 +27,8 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
 
 int knock_loader_validate_config(const struct knock_config *cfg);
 
+int knock_loader_refresh_time_offset(struct bpf_object *obj);
+
 void knock_loader_detach(struct knock_loader_handle *handle);
 
 #endif /* XDP_LOADER_H */
