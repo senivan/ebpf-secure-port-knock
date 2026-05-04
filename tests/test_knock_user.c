@@ -1,20 +1,53 @@
 #include <errno.h>
 #include <getopt.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "shared.h"
 #include "test_common.h"
 #include "xdp_loader.h"
 
+static int test_clock_gettime(clockid_t clockid, struct timespec *tp);
+static unsigned int test_sleep(unsigned int seconds);
+static int test_knock_loader_refresh_time_offset(struct bpf_object *obj);
+
+#define clock_gettime test_clock_gettime
+#define sleep test_sleep
+#define knock_loader_refresh_time_offset test_knock_loader_refresh_time_offset
+#define TIME_OFFSET_REFRESH_INTERVAL_SEC 5
 #define main knock_user_entry
 #include "../src/user/knock_user.c"
 #undef main
+#undef TIME_OFFSET_REFRESH_INTERVAL_SEC
+#undef knock_loader_refresh_time_offset
+#undef sleep
+#undef clock_gettime
 
 static int stub_validate_config_rc = 0;
 static int stub_attach_rc = -1;
 static int stub_attach_called = 0;
+static int stub_detach_called = 0;
+static int stub_refresh_rc = 0;
+static int stub_refresh_called = 0;
 static __u32 stub_attach_user_count = 0;
 static struct knock_user_record stub_attach_users[KNOCK_MAX_USERS];
+static time_t stub_clock_now_sec = 1000;
+
+static int test_clock_gettime(clockid_t clockid, struct timespec *tp)
+{
+    (void)clockid;
+
+    tp->tv_sec = stub_clock_now_sec++;
+    tp->tv_nsec = 0;
+    return 0;
+}
+
+static unsigned int test_sleep(unsigned int seconds)
+{
+    (void)seconds;
+    return 0;
+}
 
 int bpf_obj_get(const char *path)
 {
@@ -80,23 +113,37 @@ int knock_loader_attach(const struct knock_loader_opts *opts,
     if (users && user_count > 0) {
         memcpy(stub_attach_users, users, sizeof(struct knock_user_record) * user_count);
     }
+    handle->obj = (struct bpf_object *)0x1;
 
     return stub_attach_rc;
+}
+
+static int test_knock_loader_refresh_time_offset(struct bpf_object *obj)
+{
+    (void)obj;
+    stub_refresh_called++;
+    return stub_refresh_rc;
 }
 
 void knock_loader_detach(struct knock_loader_handle *handle)
 {
     (void)handle;
+    stub_detach_called = 1;
 }
 
 static void reset_test_state(void)
 {
     optind = 1;
     opterr = 0;
+    g_stop = 0;
     stub_validate_config_rc = 0;
     stub_attach_rc = -1;
     stub_attach_called = 0;
+    stub_detach_called = 0;
+    stub_refresh_rc = 0;
+    stub_refresh_called = 0;
     stub_attach_user_count = 0;
+    stub_clock_now_sec = 1000;
     memset(stub_attach_users, 0, sizeof(stub_attach_users));
 }
 
@@ -179,6 +226,34 @@ static void test_daemon_uses_fallback_user_when_hmac_is_provided(void)
     ASSERT_EQ_U32(0, stub_attach_users[0].user_id);
 }
 
+static void test_daemon_refreshes_time_offset_while_running(void)
+{
+    static const char key[] = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+    char *argv[] = {(char *)"knockd", (char *)"daemon", (char *)"--ifname", (char *)"lo", (char *)"--protect",
+                    (char *)"22", (char *)"--hmac-key", (char *)key, (char *)"--duration-sec", (char *)"6", NULL};
+
+    reset_test_state();
+    stub_attach_rc = 0;
+    ASSERT_EQ_INT(0, knock_user_entry(10, argv));
+    ASSERT_TRUE(stub_attach_called == 1);
+    ASSERT_TRUE(stub_refresh_called >= 1);
+    ASSERT_TRUE(stub_detach_called == 1);
+}
+
+static void test_daemon_exits_when_time_offset_refresh_fails(void)
+{
+    static const char key[] = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+    char *argv[] = {(char *)"knockd", (char *)"daemon", (char *)"--ifname", (char *)"lo", (char *)"--protect",
+                    (char *)"22", (char *)"--hmac-key", (char *)key, (char *)"--duration-sec", (char *)"6", NULL};
+
+    reset_test_state();
+    stub_attach_rc = 0;
+    stub_refresh_rc = -1;
+    ASSERT_EQ_INT(1, knock_user_entry(10, argv));
+    ASSERT_TRUE(stub_refresh_called >= 1);
+    ASSERT_TRUE(stub_detach_called == 1);
+}
+
 static void test_register_user_requires_fields(void)
 {
     char *argv[] = {(char *)"knockd", (char *)"register-user", NULL};
@@ -228,6 +303,8 @@ int main(void)
     test_daemon_requires_users_file_or_hmac_key();
     test_daemon_returns_loader_validate_failure();
     test_daemon_uses_fallback_user_when_hmac_is_provided();
+    test_daemon_refreshes_time_offset_while_running();
+    test_daemon_exits_when_time_offset_refresh_fails();
     test_register_user_requires_fields();
     test_register_user_with_missing_map_returns_error();
     test_rotate_user_rejects_invalid_user_id();
