@@ -14,6 +14,10 @@
 #include "shared.h"
 #include "xdp_loader.h"
 
+#ifndef TIME_OFFSET_REFRESH_INTERVAL_SEC
+#define TIME_OFFSET_REFRESH_INTERVAL_SEC 5
+#endif
+
 static volatile sig_atomic_t g_stop;
 
 static void on_signal(int signo)
@@ -68,6 +72,53 @@ static int parse_user_id_arg(const char *s, __u32 *out)
         return -1;
     }
     *out = (__u32)v;
+    return 0;
+}
+
+static int monotonic_now_sec(time_t *out)
+{
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        fprintf(stderr, "error: clock_gettime(CLOCK_MONOTONIC) failed: %s\n", strerror(errno));
+        return -1;
+    }
+
+    *out = now.tv_sec;
+    return 0;
+}
+
+static int daemon_wait_loop(struct knock_loader_handle *loader_handle, int duration_sec)
+{
+    time_t now_sec;
+    time_t end_sec = 0;
+    time_t next_refresh_sec;
+
+    if (monotonic_now_sec(&now_sec) != 0) {
+        return -1;
+    }
+
+    next_refresh_sec = now_sec + TIME_OFFSET_REFRESH_INTERVAL_SEC;
+    if (duration_sec > 0) {
+        end_sec = now_sec + duration_sec;
+    }
+
+    while (!g_stop && (duration_sec == 0 || now_sec < end_sec)) {
+        sleep(1);
+
+        if (monotonic_now_sec(&now_sec) != 0) {
+            return -1;
+        }
+
+        if (now_sec >= next_refresh_sec) {
+            if (knock_loader_refresh_time_offset(loader_handle->obj) != 0) {
+                fprintf(stderr, "error: failed to refresh realtime clock offset; detaching XDP\n");
+                return -1;
+            }
+            next_refresh_sec = now_sec + TIME_OFFSET_REFRESH_INTERVAL_SEC;
+        }
+    }
+
     return 0;
 }
 
@@ -428,15 +479,9 @@ static int cmd_daemon(int argc, char **argv)
         printf("XDP program attached for %d second(s). Press Ctrl+C to stop early.\n", duration_sec);
     }
 
-    if (duration_sec == 0) {
-        while (!g_stop) {
-            sleep(1);
-        }
-    } else {
-        time_t end_time = time(NULL) + duration_sec;
-        while (!g_stop && time(NULL) < end_time) {
-            sleep(1);
-        }
+    if (daemon_wait_loop(&loader_handle, duration_sec) != 0) {
+        knock_loader_detach(&loader_handle);
+        return 1;
     }
 
     knock_loader_detach(&loader_handle);
