@@ -74,6 +74,8 @@ For SSH, use the wrapper so it performs the auth knock, bind knock, and SSH sock
 
 If you are using the multi-user daemon, make sure `--user-id` matches the registered user. The wrapper defaults to password login; use `--ssh-auth publickey` if you want key-based SSH instead. It sends a keepalive renew packet every second so the SSH session stays authorized; override that with `--renew-interval-sec` if needed. The SSH source port defaults to `55411`; override it with `--ssh-src-port` if that port is busy.
 
+The SSH wrapper uses OpenSSH's normal host-key verification. On first connection, verify the server key when prompted. In automated contexts, pre-populate a known_hosts file and pass it through to SSH, for example `-- -o UserKnownHostsFile=/path/to/knock_known_hosts`.
+
 For HTTP(S), use the similar wrapper that performs auth/bind/renew and then runs one `curl` request from a fixed source port:
 
 ```bash
