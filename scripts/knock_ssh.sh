@@ -263,8 +263,6 @@ renew_loop() {
 }
 
 ssh_cmd=(ssh
-    -o StrictHostKeyChecking=no
-    -o UserKnownHostsFile=/dev/null
     -o ConnectTimeout=2
     -o "ProxyCommand=$proxy_command"
     -p "$ssh_port")

@@ -27,6 +27,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SSH_TEST_DIR="/etc/ssh/knock-ssh-test-$$"
 SSH_HOST_KEY="$SSH_TEST_DIR/ssh_host_ed25519_key"
 SSH_CLIENT_KEY="$SSH_TEST_DIR/client_ed25519"
+SSH_KNOWN_HOSTS="$SSH_TEST_DIR/known_hosts"
 SSH_CFG="$SSH_TEST_DIR/sshd_config"
 SSH_LOG="$SSH_TEST_DIR/sshd.log"
 SSH_PROXY_HELPER="$SSH_TEST_DIR/ssh_proxy_bind.py"
@@ -131,6 +132,8 @@ setup_sshd() {
 
     ssh-keygen -t ed25519 -f "$SSH_HOST_KEY" -N '' >/dev/null
     ssh-keygen -t ed25519 -f "$SSH_CLIENT_KEY" -N '' >/dev/null
+    printf '[%s]:%s %s\n' "$EDGE_IP" "$PROTECTED_PORT" "$(cat "$SSH_HOST_KEY.pub")" > "$SSH_KNOWN_HOSTS"
+    chmod 600 "$SSH_KNOWN_HOSTS"
 
     SSH_USER_HOME="$(getent passwd "$SSH_TEST_USER" | cut -d: -f6)"
     if [[ -z "$SSH_USER_HOME" ]]; then
@@ -236,8 +239,8 @@ run_ssh_test() {
         -o BatchMode=yes \
         -o IdentitiesOnly=yes \
         -o PreferredAuthentications=publickey \
-        -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
+        -o StrictHostKeyChecking=yes \
+        -o UserKnownHostsFile="$SSH_KNOWN_HOSTS" \
         -o ConnectTimeout=2 \
         -o "ProxyCommand=python3 $SSH_PROXY_HELPER %h %p $src_ip $src_port" \
         -i "$SSH_CLIENT_KEY" \
