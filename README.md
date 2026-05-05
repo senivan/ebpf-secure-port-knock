@@ -100,6 +100,22 @@ make test-ssh
 
 The daemon rejects `--replay-window-ms` values below the 30-second clock-skew window at startup.
 
+## Performance testing
+
+Run the local network-namespace XDP performance suite as root:
+
+```bash
+sudo ./scripts/perf_xdp_netns.sh --quick
+sudo ./scripts/perf_xdp_netns.sh
+```
+
+The benchmark creates an isolated veth/netns topology, runs baseline and XDP
+pass/drop/knock/session-pressure scenarios, samples pinned BPF counters, and
+writes artifacts under `artifacts/perf-<timestamp>/`. Each run includes raw
+CSV/JSON data, `knockd` and build logs, `perf stat` output when available, a
+Markdown summary, and SVG graphs such as `pps_by_scenario.svg`,
+`xdp_counter_deltas.svg`, and `timeseries_pps_and_drops.svg`.
+
 ## Current status
 
 Implemented in the starter XDP program:

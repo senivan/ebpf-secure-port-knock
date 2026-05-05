@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="490.0" y="28" text-anchor="middle" font-family="sans-serif" font-size="18">XDP Counter Deltas</text>
+<line x1="80" y1="48" x2="80" y2="340" stroke="#222"/>
+<line x1="80" y1="340" x2="956" y2="340" stroke="#222"/>
+<text x="18" y="194.0" transform="rotate(-90 18 194.0)" text-anchor="middle" font-family="sans-serif" font-size="12">count</text>
+<line x1="80" y1="340.0" x2="956" y2="340.0" stroke="#e5e7eb"/>
+<text x="72" y="344.0" text-anchor="end" font-family="monospace" font-size="11">0</text>
+<line x1="80" y1="267.0" x2="956" y2="267.0" stroke="#e5e7eb"/>
+<text x="72" y="271.0" text-anchor="end" font-family="monospace" font-size="11">150519</text>
+<line x1="80" y1="194.0" x2="956" y2="194.0" stroke="#e5e7eb"/>
+<text x="72" y="198.0" text-anchor="end" font-family="monospace" font-size="11">301038</text>
+<line x1="80" y1="121.0" x2="956" y2="121.0" stroke="#e5e7eb"/>
+<text x="72" y="125.0" text-anchor="end" font-family="monospace" font-size="11">451556</text>
+<line x1="80" y1="48.0" x2="956" y2="48.0" stroke="#e5e7eb"/>
+<text x="72" y="52.0" text-anchor="end" font-family="monospace" font-size="11">602075</text>
+<rect x="97.5" y="61.6" width="74.5" height="278.4" fill="#2563eb"/>
+<text x="134.8" y="56.6" text-anchor="middle" font-family="monospace" font-size="10">574041</text>
+<text x="134.8" y="358" text-anchor="end" transform="rotate(-35 134.8 358)" font-family="sans-serif" font-size="11">protected_unauthorized_drop:protected_drop</text>
+<rect x="207.0" y="62.0" width="74.5" height="278.0" fill="#2563eb"/>
+<text x="244.2" y="57.0" text-anchor="middle" font-family="monospace" font-size="10">573274</text>
+<text x="244.2" y="358" text-anchor="end" transform="rotate(-35 244.2 358)" font-family="sans-serif" font-size="11">knock_invalid_user_or_key:knock_rate_drop</text>
+<rect x="316.5" y="58.8" width="74.5" height="281.2" fill="#2563eb"/>
+<text x="353.8" y="53.8" text-anchor="middle" font-family="monospace" font-size="10">579862</text>
+<text x="353.8" y="358" text-anchor="end" transform="rotate(-35 353.8 358)" font-family="sans-serif" font-size="11">authorized_protected_pass:protected_drop</text>
+<rect x="426.0" y="148.7" width="74.5" height="191.3" fill="#2563eb"/>
+<text x="463.2" y="143.7" text-anchor="middle" font-family="monospace" font-size="10">394426</text>
+<text x="463.2" y="358" text-anchor="end" transform="rotate(-35 463.2 358)" font-family="sans-serif" font-size="11">replay_drop:knock_rate_drop</text>
+<rect x="535.5" y="157.6" width="74.5" height="182.4" fill="#2563eb"/>
+<text x="572.8" y="152.6" text-anchor="middle" font-family="monospace" font-size="10">376010</text>
+<text x="572.8" y="358" text-anchor="end" transform="rotate(-35 572.8 358)" font-family="sans-serif" font-size="11">source_rate_limit:knock_rate_drop</text>
+<rect x="645.0" y="48.0" width="74.5" height="292.0" fill="#2563eb"/>
+<text x="682.2" y="43.0" text-anchor="middle" font-family="monospace" font-size="10">602075</text>
+<text x="682.2" y="358" text-anchor="end" transform="rotate(-35 682.2 358)" font-family="sans-serif" font-size="11">active_session_pressure_32:protected_pass</text>
+<rect x="754.5" y="143.7" width="74.5" height="196.3" fill="#2563eb"/>
+<text x="791.8" y="138.7" text-anchor="middle" font-family="monospace" font-size="10">404698</text>
+<text x="791.8" y="358" text-anchor="end" transform="rotate(-35 791.8 358)" font-family="sans-serif" font-size="11">user_scale_128:knock_rate_drop</text>
+<rect x="864.0" y="172.0" width="74.5" height="168.0" fill="#2563eb"/>
+<text x="901.2" y="167.0" text-anchor="middle" font-family="monospace" font-size="10">346467</text>
+<text x="901.2" y="358" text-anchor="end" transform="rotate(-35 901.2 358)" font-family="sans-serif" font-size="11">user_scale_1024:knock_rate_drop</text>
+</svg>
