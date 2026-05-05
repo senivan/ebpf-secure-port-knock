@@ -1,0 +1,7 @@
+build_ok=1
+timestamp_utc=2026-05-05T06:31:52Z
+kernel=6.19.14-200.fc43.x86_64
+user=user
+uid=1000
+minimal_scenario_done=1
+scenario_runs_done=1

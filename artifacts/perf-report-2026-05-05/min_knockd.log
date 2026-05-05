@@ -1,0 +1,11 @@
+warn: no --users-file provided, using a single fallback user_id=0 from --hmac-key
+Interface: lo
+Knock port: 40000
+Protected ports (1): 2222
+Knock timeout: 5000 ms
+Bind window: 3000 ms
+Replay window: 30000 ms
+Loaded users: 1
+warn: daemon will exit after 25 second(s); use --duration-sec 0 for indefinite run.
+XDP program attached for 25 second(s). Press Ctrl+C to stop early.
+XDP program detached.

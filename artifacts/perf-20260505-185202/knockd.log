@@ -1,0 +1,38 @@
+warn: no --users-file provided, using a single fallback user_id=0 from --hmac-key
+Interface: perf-edge-if
+Knock port: 40000
+Protected ports (1): 2222
+Knock timeout: 60000 ms
+Bind window: 10000 ms
+Replay window: 30000 ms
+Loaded users: 1
+XDP program attached. Running until signal.
+XDP program detached.
+warn: no --users-file provided, using a single fallback user_id=0 from --hmac-key
+Interface: perf-edge-if
+Knock port: 40000
+Protected ports (1): 2222
+Knock timeout: 60000 ms
+Bind window: 10000 ms
+Replay window: 30000 ms
+Loaded users: 1
+XDP program attached. Running until signal.
+XDP program detached.
+Interface: perf-edge-if
+Knock port: 40000
+Protected ports (1): 2222
+Knock timeout: 60000 ms
+Bind window: 10000 ms
+Replay window: 30000 ms
+Loaded users: 128
+XDP program attached. Running until signal.
+XDP program detached.
+Interface: perf-edge-if
+Knock port: 40000
+Protected ports (1): 2222
+Knock timeout: 60000 ms
+Bind window: 10000 ms
+Replay window: 30000 ms
+Loaded users: 1024
+XDP program attached. Running until signal.
+XDP program detached.

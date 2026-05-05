@@ -21,7 +21,7 @@ UNIT_TEST_KNOCK_CRYPTO := $(BUILD_DIR)/test_knock_crypto
 UNIT_TEST_KNOCK_USER := $(BUILD_DIR)/test_knock_user
 UNIT_TEST_KNOCK_CLIENT := $(BUILD_DIR)/test_knock_client
 
-.PHONY: all clean run test test-netns test-ssh test-user-auth test-user-rotation test-user-admin test-user-all test-user-pressure test-config unit-test all-test help
+.PHONY: all clean run perf-netns test test-netns test-ssh test-user-auth test-user-rotation test-user-admin test-user-all test-user-pressure test-config unit-test all-test help
 
 all: $(BPF_OBJ) $(USER_BIN) $(KNOCK_CLIENT_BIN) $(UNIT_TEST_CLI_COMMON) $(UNIT_TEST_NET_CHECKSUM) $(UNIT_TEST_KNOCK_CRYPTO) $(UNIT_TEST_KNOCK_USER) $(UNIT_TEST_KNOCK_CLIENT)
 
@@ -29,6 +29,7 @@ help:
 	@echo "Targets:"
 	@echo "  make all          Build eBPF object + user-space binaries"
 	@echo "  make run IFACE= USERS_FILE= PROTECT= Attach XDP gate with per-user signed knock config"
+	@echo "  make perf-netns   Run local netns XDP performance benchmark (requires root)"
 	@echo "  make test         Run integration smoke test (requires root)"
 	@echo "  make test-netns   Run network-namespace integration scenario (requires root)"
 	@echo "  make test-ssh     Run SSH functional netns scenario (requires root + sshd)"
@@ -84,6 +85,9 @@ run: all
 		$(if $(TIMEOUT_MS),--timeout-ms $(TIMEOUT_MS),) \
 		$(if $(REPLAY_WINDOW_MS),--replay-window-ms $(REPLAY_WINDOW_MS),) \
 		$(if $(DURATION_SEC),--duration-sec $(DURATION_SEC),)
+
+perf-netns: all
+	sudo ./scripts/perf_xdp_netns.sh
 
 test: all
 	sudo ./scripts/test_e2e.sh

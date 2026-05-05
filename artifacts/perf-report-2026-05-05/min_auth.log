@@ -1,0 +1,2 @@
+Knock frame sent on lo to 127.0.0.1:40000 from 127.0.0.1:50000
+type=auth timestamp=1777962729 session_id=76208251644413 nonce=3713830374 sig=7aa09a92:7ae0c01c:f8062935:da882a9b

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="490.0" y="28" text-anchor="middle" font-family="sans-serif" font-size="18">PPS by Trial</text>
+<line x1="80" y1="48" x2="80" y2="340" stroke="#222"/>
+<line x1="80" y1="340" x2="956" y2="340" stroke="#222"/>
+<text x="18" y="194.0" transform="rotate(-90 18 194.0)" text-anchor="middle" font-family="sans-serif" font-size="12">PPS</text>
+<line x1="80" y1="340.0" x2="956" y2="340.0" stroke="#e5e7eb"/>
+<text x="72" y="344.0" text-anchor="end" font-family="monospace" font-size="11">0</text>
+<line x1="80" y1="267.0" x2="956" y2="267.0" stroke="#e5e7eb"/>
+<text x="72" y="271.0" text-anchor="end" font-family="monospace" font-size="11">52078</text>
+<line x1="80" y1="194.0" x2="956" y2="194.0" stroke="#e5e7eb"/>
+<text x="72" y="198.0" text-anchor="end" font-family="monospace" font-size="11">104155</text>
+<line x1="80" y1="121.0" x2="956" y2="121.0" stroke="#e5e7eb"/>
+<text x="72" y="125.0" text-anchor="end" font-family="monospace" font-size="11">156233</text>
+<line x1="80" y1="48.0" x2="956" y2="48.0" stroke="#e5e7eb"/>
+<text x="72" y="52.0" text-anchor="end" font-family="monospace" font-size="11">208311</text>
+<rect x="94.0" y="48.0" width="59.6" height="292.0" fill="#2563eb"/>
+<text x="123.8" y="43.0" text-anchor="middle" font-family="monospace" font-size="10">208311</text>
+<text x="123.8" y="358" text-anchor="end" transform="rotate(-35 123.8 358)" font-family="sans-serif" font-size="11">baseline_no_xdp#1</text>
+<rect x="181.6" y="71.8" width="59.6" height="268.2" fill="#2563eb"/>
+<text x="211.4" y="66.8" text-anchor="middle" font-family="monospace" font-size="10">191333</text>
+<text x="211.4" y="358" text-anchor="end" transform="rotate(-35 211.4 358)" font-family="sans-serif" font-size="11">xdp_unprotected_pass#1</text>
+<rect x="269.2" y="83.3" width="59.6" height="256.7" fill="#2563eb"/>
+<text x="299.0" y="78.3" text-anchor="middle" font-family="monospace" font-size="10">183112</text>
+<text x="299.0" y="358" text-anchor="end" transform="rotate(-35 299.0 358)" font-family="sans-serif" font-size="11">protected_unauthorized_drop#1</text>
+<rect x="356.8" y="71.1" width="59.6" height="268.9" fill="#2563eb"/>
+<text x="386.6" y="66.1" text-anchor="middle" font-family="monospace" font-size="10">191851</text>
+<text x="386.6" y="358" text-anchor="end" transform="rotate(-35 386.6 358)" font-family="sans-serif" font-size="11">knock_invalid_user_or_key#1</text>
+<rect x="444.4" y="80.4" width="59.6" height="259.6" fill="#2563eb"/>
+<text x="474.2" y="75.4" text-anchor="middle" font-family="monospace" font-size="10">185165</text>
+<text x="474.2" y="358" text-anchor="end" transform="rotate(-35 474.2 358)" font-family="sans-serif" font-size="11">authorized_protected_pass#1</text>
+<rect x="532.0" y="340.0" width="59.6" height="0.0" fill="#2563eb"/>
+<text x="561.8" y="335.0" text-anchor="middle" font-family="monospace" font-size="10">20</text>
+<text x="561.8" y="358" text-anchor="end" transform="rotate(-35 561.8 358)" font-family="sans-serif" font-size="11">replay_drop#1</text>
+<rect x="619.6" y="159.7" width="59.6" height="180.3" fill="#2563eb"/>
+<text x="649.4" y="154.7" text-anchor="middle" font-family="monospace" font-size="10">128617</text>
+<text x="649.4" y="358" text-anchor="end" transform="rotate(-35 649.4 358)" font-family="sans-serif" font-size="11">source_rate_limit#1</text>
+<rect x="707.2" y="63.9" width="59.6" height="276.1" fill="#2563eb"/>
+<text x="737.0" y="58.9" text-anchor="middle" font-family="monospace" font-size="10">196948</text>
+<text x="737.0" y="358" text-anchor="end" transform="rotate(-35 737.0 358)" font-family="sans-serif" font-size="11">active_session_pressure_32#1</text>
+<rect x="794.8" y="138.4" width="59.6" height="201.6" fill="#2563eb"/>
+<text x="824.6" y="133.4" text-anchor="middle" font-family="monospace" font-size="10">143793</text>
+<text x="824.6" y="358" text-anchor="end" transform="rotate(-35 824.6 358)" font-family="sans-serif" font-size="11">user_scale_128#1</text>
+<rect x="882.4" y="154.4" width="59.6" height="185.6" fill="#2563eb"/>
+<text x="912.2" y="149.4" text-anchor="middle" font-family="monospace" font-size="10">132423</text>
+<text x="912.2" y="358" text-anchor="end" transform="rotate(-35 912.2 358)" font-family="sans-serif" font-size="11">user_scale_1024#1</text>
+</svg>

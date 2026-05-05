@@ -1,0 +1,21 @@
+[2026-05-05T18:53:34+0300] building project and packet generator
+[2026-05-05T18:53:34+0300] running baseline without XDP
+[2026-05-05T18:53:34+0300] scenario=baseline_no_xdp trial=1 warmup=1s measure=3s
+[2026-05-05T18:53:40+0300] starting daemon with one user
+[2026-05-05T18:53:42+0300] scenario=xdp_unprotected_pass trial=1 warmup=1s measure=3s
+[2026-05-05T18:53:47+0300] scenario=protected_unauthorized_drop trial=1 warmup=1s measure=3s
+[2026-05-05T18:53:52+0300] scenario=knock_invalid_user_or_key trial=1 warmup=1s measure=3s
+[2026-05-05T18:53:57+0300] restarting daemon before authorized session tests
+[2026-05-05T18:53:59+0300] setting up authorized flow
+[2026-05-05T18:54:00+0300] scenario=authorized_protected_pass trial=1 warmup=1s measure=3s
+[2026-05-05T18:54:05+0300] scenario=replay_drop trial=1 warmup=1s measure=3s
+[2026-05-05T18:54:10+0300] scenario=source_rate_limit trial=1 warmup=1s measure=3s
+[2026-05-05T18:54:15+0300] restarting daemon before active-session pressure tests
+[2026-05-05T18:54:17+0300] creating active sessions for session pressure
+[2026-05-05T18:54:19+0300] scenario=active_session_pressure_32 trial=1 warmup=1s measure=3s
+[2026-05-05T18:54:24+0300] restarting daemon with 128 users
+[2026-05-05T18:54:26+0300] scenario=user_scale_128 trial=1 warmup=1s measure=3s
+[2026-05-05T18:54:32+0300] restarting daemon with 1024 users
+[2026-05-05T18:54:34+0300] scenario=user_scale_1024 trial=1 warmup=1s measure=3s
+[2026-05-05T18:54:39+0300] rendering report
+[2026-05-05T18:54:39+0300] complete: /home/user/ebpf-secure-port-knock/artifacts/perf-20260505-185333/summary.md

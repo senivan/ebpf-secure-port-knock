@@ -1,0 +1,13 @@
+{
+  "bpftool": "bpftool v7.6.0",
+  "clang": "clang version 21.1.8 (Fedora 21.1.8-4.fc43)",
+  "cpu_count": 32,
+  "cpu_model": "Intel(R) Xeon(R) CPU E5-2690 v4 @ 2.60GHz",
+  "date": "2026-05-05T18:48:33+03:00",
+  "git_commit": "03fe95c899d39e0a681677e0a77b9303149242d9",
+  "git_status_short": "M Makefile\n M README.md\n?? .codex\n?? artifacts/\n?? performance-report.md\n?? scripts/perf_xdp_netns.sh\n?? tools/",
+  "kernel": "6.19.14-200.fc43.x86_64",
+  "machine": "x86_64",
+  "out_dir": "/home/user/ebpf-secure-port-knock/artifacts/perf-20260505-184832",
+  "perf": "perf version 6.19.14-200.fc43.x86_64"
+}

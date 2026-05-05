@@ -1,0 +1,2 @@
+Knock frame sent on perf-client-ns to 10.210.0.1:40000 from 10.210.0.2:50000
+type=auth timestamp=1777996242 session_id=82189447965821 nonce=152024 sig=9ca51838:f91d3f0a:68e29b21:3571ae24

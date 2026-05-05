@@ -1,0 +1,11 @@
+scenario,trial,status,sent,errors,elapsed_sec,pps,mbps,frame_len,delta_knock_seen,delta_knock_short,delta_knock_valid,delta_knock_deauth,delta_replay_drop,delta_bind_drop,delta_session_timeout_drop,delta_deauth_miss,delta_unknown_user,delta_key_mismatch,delta_grace_key_used,delta_knock_rate_drop,delta_session_limit_drop,delta_map_update_fail,delta_protected_drop,delta_protected_pass,perf_task_clock_ms,perf_cycles,perf_instructions,perf_context_switches,perf_cpu_migrations
+baseline_no_xdp,1,ok,646646,0,3.000002,215548.52,93.117,54,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2898.56,7291235740,9259669514,586,9
+xdp_unprotected_pass,1,ok,575255,0,3.000003,191751.473,82.837,54,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2909.21,7367609925,9028505623,575,8
+protected_unauthorized_drop,1,ok,574041,0,3.000005,191346.654,82.662,54,0,0,0,0,0,0,0,0,0,0,0,0,0,0,574041,0,2908.19,7292008382,8097733669,558,7
+knock_invalid_user_or_key,1,ok,573274,0,3.000009,191090.745,155.93,102,0,0,0,0,0,0,0,0,0,0,0,573274,0,0,0,0,2910.94,7384509831,8115455982,568,8
+authorized_protected_pass,1,ok,579862,0,3.000001,193287.295,83.5,54,0,0,0,0,0,0,0,0,0,0,0,0,0,0,579862,0,2913.30,7265462250,8174426552,575,9
+replay_drop,1,ok,394426,0,3.000002,131475.248,107.284,102,0,0,0,0,0,0,0,0,0,0,0,394426,0,0,0,0,2939.77,7290875608,13003999617,578,11
+source_rate_limit,1,ok,376010,0,3.000005,125336.444,102.275,102,0,0,0,0,0,0,0,0,0,0,0,376010,0,0,0,0,2938.54,7103542366,12401214247,558,6
+active_session_pressure_32,1,ok,602075,0,3.000006,200691.278,86.699,54,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,602075,2910.45,7718406703,9550420135,576,6
+user_scale_128,1,ok,404698,0,3.000003,134899.193,110.078,102,0,0,0,0,0,0,0,0,0,0,0,404698,0,0,0,0,2935.85,7418108119,13350935878,584,5
+user_scale_1024,1,ok,346467,0,3.000006,115488.777,94.239,102,0,0,0,0,0,0,0,0,0,0,0,346467,0,0,0,0,2941.52,7312207566,11436374151,554,5

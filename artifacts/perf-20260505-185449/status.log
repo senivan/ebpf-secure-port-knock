@@ -1,0 +1,41 @@
+[2026-05-05T18:54:50+0300] building project and packet generator
+[2026-05-05T18:54:50+0300] running baseline without XDP
+[2026-05-05T18:54:50+0300] scenario=baseline_no_xdp trial=1 warmup=5s measure=30s
+[2026-05-05T18:55:29+0300] scenario=baseline_no_xdp trial=2 warmup=5s measure=30s
+[2026-05-05T18:56:07+0300] scenario=baseline_no_xdp trial=3 warmup=5s measure=30s
+[2026-05-05T18:56:45+0300] starting daemon with one user
+[2026-05-05T18:56:47+0300] scenario=xdp_unprotected_pass trial=1 warmup=5s measure=30s
+[2026-05-05T18:57:26+0300] scenario=xdp_unprotected_pass trial=2 warmup=5s measure=30s
+[2026-05-05T18:58:04+0300] scenario=xdp_unprotected_pass trial=3 warmup=5s measure=30s
+[2026-05-05T18:58:42+0300] scenario=protected_unauthorized_drop trial=1 warmup=5s measure=30s
+[2026-05-05T18:59:21+0300] scenario=protected_unauthorized_drop trial=2 warmup=5s measure=30s
+[2026-05-05T18:59:59+0300] scenario=protected_unauthorized_drop trial=3 warmup=5s measure=30s
+[2026-05-05T19:00:37+0300] scenario=knock_invalid_user_or_key trial=1 warmup=5s measure=30s
+[2026-05-05T19:01:15+0300] scenario=knock_invalid_user_or_key trial=2 warmup=5s measure=30s
+[2026-05-05T19:01:54+0300] scenario=knock_invalid_user_or_key trial=3 warmup=5s measure=30s
+[2026-05-05T19:02:32+0300] restarting daemon before authorized session tests
+[2026-05-05T19:02:34+0300] setting up authorized flow
+[2026-05-05T19:02:34+0300] scenario=authorized_protected_pass trial=1 warmup=5s measure=30s
+[2026-05-05T19:03:13+0300] scenario=authorized_protected_pass trial=2 warmup=5s measure=30s
+[2026-05-05T19:03:51+0300] scenario=authorized_protected_pass trial=3 warmup=5s measure=30s
+[2026-05-05T19:04:29+0300] scenario=replay_drop trial=1 warmup=5s measure=30s
+[2026-05-05T19:05:07+0300] scenario=replay_drop trial=2 warmup=5s measure=30s
+[2026-05-05T19:05:46+0300] scenario=replay_drop trial=3 warmup=5s measure=30s
+[2026-05-05T19:06:24+0300] scenario=source_rate_limit trial=1 warmup=5s measure=30s
+[2026-05-05T19:07:02+0300] scenario=source_rate_limit trial=2 warmup=5s measure=30s
+[2026-05-05T19:07:41+0300] scenario=source_rate_limit trial=3 warmup=5s measure=30s
+[2026-05-05T19:08:19+0300] restarting daemon before active-session pressure tests
+[2026-05-05T19:08:21+0300] creating active sessions for session pressure
+[2026-05-05T19:08:23+0300] scenario=active_session_pressure_32 trial=1 warmup=5s measure=30s
+[2026-05-05T19:09:01+0300] scenario=active_session_pressure_32 trial=2 warmup=5s measure=30s
+[2026-05-05T19:09:39+0300] scenario=active_session_pressure_32 trial=3 warmup=5s measure=30s
+[2026-05-05T19:10:17+0300] restarting daemon with 128 users
+[2026-05-05T19:10:19+0300] scenario=user_scale_128 trial=1 warmup=5s measure=30s
+[2026-05-05T19:10:58+0300] scenario=user_scale_128 trial=2 warmup=5s measure=30s
+[2026-05-05T19:11:36+0300] scenario=user_scale_128 trial=3 warmup=5s measure=30s
+[2026-05-05T19:12:14+0300] restarting daemon with 1024 users
+[2026-05-05T19:12:16+0300] scenario=user_scale_1024 trial=1 warmup=5s measure=30s
+[2026-05-05T19:12:55+0300] scenario=user_scale_1024 trial=2 warmup=5s measure=30s
+[2026-05-05T19:13:33+0300] scenario=user_scale_1024 trial=3 warmup=5s measure=30s
+[2026-05-05T19:14:11+0300] rendering report
+[2026-05-05T19:14:12+0300] complete: /home/user/ebpf-secure-port-knock/artifacts/perf-20260505-185449/summary.md
