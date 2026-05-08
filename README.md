@@ -174,6 +174,8 @@ sudo ./build/knockd daemon \
 
 Use `--duration-sec 0` to run indefinitely until `SIGINT` or `SIGTERM`. Any
 positive value is primarily useful for short-lived test scenarios.
+Add `--sabbath-mode` when the gate should refuse to attach on Saturdays and
+detach itself if a running daemon reaches Saturday, using the host's local time.
 
 ## Runtime user key management
 

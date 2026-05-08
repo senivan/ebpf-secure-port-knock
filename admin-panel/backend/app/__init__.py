@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from werkzeug.security import generate_password_hash
@@ -31,6 +31,7 @@ def get_bpf_accessor():
             default_ifname=config.KNOCKD_DEFAULT_IFACE,
             default_users_file=config.KNOCKD_USERS_FILE,
             default_pin_dir=config.KNOCKD_PIN_DIR,
+            sabbath_mode=config.KNOCKD_SABBATH_MODE,
         )
 
 def create_app():
@@ -47,8 +48,28 @@ def create_app():
     app.bpf_accessor = get_bpf_accessor()
 
     # Initialize extensions
-    CORS(app)
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": config.CORS_ORIGINS,
+            "allow_headers": ["Authorization", "Content-Type"],
+            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            "supports_credentials": False,
+        }
+    })
     jwt = JWTManager(app)
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('Referrer-Policy', 'no-referrer')
+        response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+        if app.config.get('SECURITY_HSTS_ENABLED') and (
+            request.is_secure or request.headers.get('X-Forwarded-Proto') == 'https'
+        ):
+            response.headers.setdefault('Strict-Transport-Security', 'max-age=63072000; includeSubDomains')
+        return response
 
     # Initialize rate limiter
     from app.routes.auth import limiter

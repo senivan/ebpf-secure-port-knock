@@ -53,9 +53,12 @@ Important environment variables:
 - `KNOCKD_USERS_FILE` (default empty)
 - `KNOCKD_PIN_DIR` (default `/sys/fs/bpf/knock_gate`)
 - `KNOCKD_USE_SUDO` (default `true`)
+- `KNOCKD_SABBATH_MODE` (default `false`): refuse to start `knockd` on local Saturdays and pass `--sabbath-mode`
 - `USE_MOCK_BPF` (default `auto`)
 - `SECRET_KEY`
 - `JWT_SECRET_KEY`
+- `CORS_ORIGINS` comma-separated trusted frontend origins, for example `https://admin.example.com`
+- `SECURITY_HSTS_ENABLED` (default `true` in production, `false` otherwise)
 
 Live daemon management works by launching the repo's `build/knockd daemon` command with the configured interface, users file or HMAC key, protected ports, and pin directory.
 
@@ -111,18 +114,34 @@ Notes:
 
 ```bash
 cd admin-panel
+mkdir -p certs
+# Place a valid TLS certificate and key at:
+#   certs/admin-panel.crt
+#   certs/admin-panel.key
 docker compose up --build
 ```
 
 Default container ports:
 
-- Backend: `5000`
-- Frontend: `3000`
+- Reverse proxy: `80` redirects to `443`
+- HTTPS admin panel: `443`
+- Backend and frontend remain on the internal compose network
+
+Required compose environment variables:
+
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `SECRET_KEY`
+- `JWT_SECRET_KEY`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
 
 ## Security notes
 
 - Change default admin credentials before exposing the service
 - Set strong `SECRET_KEY` and `JWT_SECRET_KEY`
+- Set `CORS_ORIGINS` to the exact HTTPS origin(s) that should access the API
+- Terminate TLS at nginx with valid certificates; HTTP is redirected to HTTPS
 - Keep the panel on trusted networks only
 - Treat the daemon-control endpoints as privileged operations
-- Prefer HTTPS and proper reverse-proxy hardening in production
+- Keep the reverse-proxy security headers enabled in production

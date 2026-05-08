@@ -9,19 +9,27 @@
 #include "xdp_loader.h"
 
 static int test_clock_gettime(clockid_t clockid, struct timespec *tp);
+static time_t test_time(time_t *tloc);
+static struct tm *test_localtime_r(const time_t *timep, struct tm *result);
 static unsigned int test_sleep(unsigned int seconds);
 static int test_knock_loader_refresh_time_offset(struct bpf_object *obj);
 
 #define clock_gettime test_clock_gettime
+#define time test_time
+#define localtime_r test_localtime_r
 #define sleep test_sleep
 #define knock_loader_refresh_time_offset test_knock_loader_refresh_time_offset
 #define TIME_OFFSET_REFRESH_INTERVAL_SEC 5
+#define SABBATH_CHECK_INTERVAL_SEC 1
 #define main knock_user_entry
 #include "../src/user/knock_user.c"
 #undef main
+#undef SABBATH_CHECK_INTERVAL_SEC
 #undef TIME_OFFSET_REFRESH_INTERVAL_SEC
 #undef knock_loader_refresh_time_offset
 #undef sleep
+#undef localtime_r
+#undef time
 #undef clock_gettime
 
 static int stub_validate_config_rc = 0;
@@ -33,6 +41,9 @@ static int stub_refresh_called = 0;
 static __u32 stub_attach_user_count = 0;
 static struct knock_user_record stub_attach_users[KNOCK_MAX_USERS];
 static time_t stub_clock_now_sec = 1000;
+static int stub_local_wday = 1;
+static int stub_localtime_calls = 0;
+static int stub_sabbath_after_localtime_calls = 0;
 
 static int test_clock_gettime(clockid_t clockid, struct timespec *tp)
 {
@@ -41,6 +52,33 @@ static int test_clock_gettime(clockid_t clockid, struct timespec *tp)
     tp->tv_sec = stub_clock_now_sec++;
     tp->tv_nsec = 0;
     return 0;
+}
+
+static time_t test_time(time_t *tloc)
+{
+    time_t now = 1700000000;
+
+    if (tloc) {
+        *tloc = now;
+    }
+
+    return now;
+}
+
+static struct tm *test_localtime_r(const time_t *timep, struct tm *result)
+{
+    (void)timep;
+
+    memset(result, 0, sizeof(*result));
+    stub_localtime_calls++;
+    if (stub_sabbath_after_localtime_calls > 0 &&
+        stub_localtime_calls >= stub_sabbath_after_localtime_calls) {
+        result->tm_wday = 6;
+    } else {
+        result->tm_wday = stub_local_wday;
+    }
+
+    return result;
 }
 
 static unsigned int test_sleep(unsigned int seconds)
@@ -144,6 +182,9 @@ static void reset_test_state(void)
     stub_refresh_called = 0;
     stub_attach_user_count = 0;
     stub_clock_now_sec = 1000;
+    stub_local_wday = 1;
+    stub_localtime_calls = 0;
+    stub_sabbath_after_localtime_calls = 0;
     memset(stub_attach_users, 0, sizeof(stub_attach_users));
 }
 
@@ -226,6 +267,19 @@ static void test_daemon_uses_fallback_user_when_hmac_is_provided(void)
     ASSERT_EQ_U32(0, stub_attach_users[0].user_id);
 }
 
+static void test_daemon_sabbath_mode_skips_attach_on_saturday(void)
+{
+    static const char key[] = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+    char *argv[] = {(char *)"knockd", (char *)"daemon", (char *)"--ifname", (char *)"lo", (char *)"--protect",
+                    (char *)"22", (char *)"--hmac-key", (char *)key, (char *)"--sabbath-mode", NULL};
+
+    reset_test_state();
+    stub_local_wday = 6;
+    ASSERT_EQ_INT(0, knock_user_entry(9, argv));
+    ASSERT_TRUE(stub_attach_called == 0);
+    ASSERT_TRUE(stub_detach_called == 0);
+}
+
 static void test_daemon_refreshes_time_offset_while_running(void)
 {
     static const char key[] = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
@@ -237,6 +291,21 @@ static void test_daemon_refreshes_time_offset_while_running(void)
     ASSERT_EQ_INT(0, knock_user_entry(10, argv));
     ASSERT_TRUE(stub_attach_called == 1);
     ASSERT_TRUE(stub_refresh_called >= 1);
+    ASSERT_TRUE(stub_detach_called == 1);
+}
+
+static void test_daemon_sabbath_mode_detaches_when_saturday_starts(void)
+{
+    static const char key[] = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+    char *argv[] = {(char *)"knockd", (char *)"daemon", (char *)"--ifname", (char *)"lo", (char *)"--protect",
+                    (char *)"22", (char *)"--hmac-key", (char *)key, (char *)"--duration-sec", (char *)"3",
+                    (char *)"--sabbath-mode", NULL};
+
+    reset_test_state();
+    stub_attach_rc = 0;
+    stub_sabbath_after_localtime_calls = 2;
+    ASSERT_EQ_INT(0, knock_user_entry(11, argv));
+    ASSERT_TRUE(stub_attach_called == 1);
     ASSERT_TRUE(stub_detach_called == 1);
 }
 
@@ -303,7 +372,9 @@ int main(void)
     test_daemon_requires_users_file_or_hmac_key();
     test_daemon_returns_loader_validate_failure();
     test_daemon_uses_fallback_user_when_hmac_is_provided();
+    test_daemon_sabbath_mode_skips_attach_on_saturday();
     test_daemon_refreshes_time_offset_while_running();
+    test_daemon_sabbath_mode_detaches_when_saturday_starts();
     test_daemon_exits_when_time_offset_refresh_fails();
     test_register_user_requires_fields();
     test_register_user_with_missing_map_returns_error();

@@ -22,6 +22,12 @@ INSECURE_ADMIN_PASSWORD_VALUES = {
     'replace-this-password',
 }
 
+
+def parse_csv_env(name, default=''):
+    """Parse a comma-separated environment variable into a clean list."""
+    value = os.getenv(name, default)
+    return [item.strip() for item in value.split(',') if item.strip()]
+
 class Config:
     """Base configuration"""
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-me')
@@ -41,6 +47,7 @@ class Config:
     KNOCKD_USERS_FILE = os.getenv('KNOCKD_USERS_FILE', '')
     KNOCKD_PIN_DIR = os.getenv('KNOCKD_PIN_DIR', '/sys/fs/bpf/knock_gate')
     KNOCKD_USE_SUDO = os.getenv('KNOCKD_USE_SUDO', 'true').lower() in ['1', 'true', 'yes']
+    KNOCKD_SABBATH_MODE = os.getenv('KNOCKD_SABBATH_MODE', 'false').lower() in ['1', 'true', 'yes']
     
     # Admin credentials
     ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
@@ -50,6 +57,11 @@ class Config:
     # API settings
     API_PORT = int(os.getenv('API_PORT', 5000))
     JSON_SORT_KEYS = False
+    CORS_ORIGINS = parse_csv_env(
+        'CORS_ORIGINS',
+        'http://localhost:3000,http://127.0.0.1:3000'
+    )
+    SECURITY_HSTS_ENABLED = os.getenv('SECURITY_HSTS_ENABLED', 'false').lower() in ['1', 'true', 'yes']
     
     # Mock/Demo mode (use if BPF maps don't exist)
     USE_MOCK_BPF = os.getenv('USE_MOCK_BPF', 'auto')  # 'auto', 'true', 'false'
@@ -63,6 +75,7 @@ class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
+    SECURITY_HSTS_ENABLED = os.getenv('SECURITY_HSTS_ENABLED', 'true').lower() in ['1', 'true', 'yes']
 
 class TestingConfig(Config):
     """Testing configuration"""
@@ -100,6 +113,12 @@ def validate_config(config):
 
     if config.ADMIN_PASSWORD in INSECURE_ADMIN_PASSWORD_VALUES:
         errors.append('ADMIN_PASSWORD must not use the repository default value')
+
+    if not config.CORS_ORIGINS:
+        errors.append('CORS_ORIGINS must list explicit trusted origins')
+
+    if '*' in config.CORS_ORIGINS:
+        errors.append('CORS_ORIGINS must not contain wildcard origins')
 
     if errors:
         joined = '\n'.join(f'- {error}' for error in errors)

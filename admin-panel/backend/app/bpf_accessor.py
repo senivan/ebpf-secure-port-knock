@@ -132,6 +132,7 @@ class BPFMapAccessor:
         default_ifname: str = "eth0",
         default_users_file: str = "",
         default_pin_dir: str = "/sys/fs/bpf/knock_gate",
+        sabbath_mode: bool = False,
     ):
         self.bpf_path = Path(bpf_path)
         self.knockd_bin = knockd_bin
@@ -141,6 +142,7 @@ class BPFMapAccessor:
         self.default_ifname = default_ifname
         self.default_users_file = default_users_file
         self.default_pin_dir = default_pin_dir
+        self.sabbath_mode = sabbath_mode
 
         self.default_config = {
             "ifname": default_ifname,
@@ -153,6 +155,7 @@ class BPFMapAccessor:
             "replay_window_ms": 30000,
             "duration_sec": 86400,
             "hmac_key": "",
+            "sabbath_mode": sabbath_mode,
         }
         self.last_knock: Optional[Dict[str, Any]] = None
         self._libc = ctypes.CDLL(None, use_errno=True)
@@ -215,6 +218,10 @@ class BPFMapAccessor:
         if not isinstance(timeout_ms, int) or timeout_ms <= 0:
             return "Invalid timeout_ms"
 
+        sabbath_mode = config.get("sabbath_mode", False)
+        if not isinstance(sabbath_mode, bool):
+            return "sabbath_mode must be a boolean"
+
         hmac_key = config.get("hmac_key", "")
         users_file = config.get("users_file", "")
         if hmac_key:
@@ -243,14 +250,21 @@ class BPFMapAccessor:
         except Exception:
             return []
 
+    def _is_sabbath_active(self) -> bool:
+        return time.localtime().tm_wday == 5
+
     def get_daemon_status(self) -> Dict[str, Any]:
         pids = self._get_knockd_pids()
         running = len(pids) > 0
+        cfg = self._load_local_config()
+        sabbath_mode = bool(cfg.get("sabbath_mode", self.sabbath_mode))
         return {
             "running": running,
             "pids": pids,
             "binary": self.knockd_bin,
             "log_path": str(self.daemon_log_path),
+            "sabbath_mode": sabbath_mode,
+            "sabbath_active": sabbath_mode and self._is_sabbath_active(),
         }
 
     def start_daemon(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -261,6 +275,14 @@ class BPFMapAccessor:
         err = self._validate_config(cfg)
         if err:
             return {"success": False, "error": err}
+
+        if bool(cfg.get("sabbath_mode", self.sabbath_mode)) and self._is_sabbath_active():
+            return {
+                "success": False,
+                "error": "Sabbath mode is active; knockd will not start on Saturday",
+                "sabbath_active": True,
+                "config": cfg,
+            }
 
         knockd_bin = self._resolve_knockd_bin()
         if not knockd_bin:
@@ -296,6 +318,8 @@ class BPFMapAccessor:
             cmd.extend(["--users-file", users_file])
         elif hmac_key:
             cmd.extend(["--hmac-key", hmac_key])
+        if cfg.get("sabbath_mode", False):
+            cmd.append("--sabbath-mode")
 
         cmd = self._build_cmd(cmd)
 

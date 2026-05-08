@@ -13,6 +13,7 @@ export const ConfigurationPage = () => {
     protected_ports: '',
     timeout_ms: '',
     hmac_key: '',
+    sabbath_mode: false,
     restart_daemon: true
   });
 
@@ -28,6 +29,7 @@ export const ConfigurationPage = () => {
         protected_ports: data.protected_ports?.join(',') || '',
         timeout_ms: data.timeout_ms?.toString() || '',
         hmac_key: data.hmac_key || '',
+        sabbath_mode: Boolean(data.sabbath_mode),
         restart_daemon: true
       });
       setError('');
@@ -76,6 +78,7 @@ export const ConfigurationPage = () => {
         protected_ports: protectedPorts,
         timeout_ms: timeoutMs,
         hmac_key: formData.hmac_key,
+        sabbath_mode: formData.sabbath_mode,
         restart_daemon: formData.restart_daemon
       });
 
@@ -185,6 +188,21 @@ export const ConfigurationPage = () => {
                 Length: {formData.hmac_key.length} characters ({(formData.hmac_key.length / 2).toFixed(0)} bytes)
               </p>
             )}
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-slate-300 text-sm font-semibold">
+              <input
+                type="checkbox"
+                name="sabbath_mode"
+                checked={formData.sabbath_mode}
+                onChange={(e) => setFormData(prev => ({ ...prev, sabbath_mode: e.target.checked }))}
+                disabled={!editing}
+                className="rounded border-slate-600 bg-slate-700"
+              />
+              Sabbath mode
+            </label>
+            <p className="text-slate-400 text-xs mt-1">Disables the XDP gate on Saturdays using the daemon host's local time.</p>
           </div>
 
           <div>

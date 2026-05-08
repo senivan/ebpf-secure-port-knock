@@ -42,6 +42,9 @@ def update_config():
         if not isinstance(data['timeout_ms'], int) or data['timeout_ms'] <= 0:
             return jsonify({'error': 'Invalid timeout'}), 400
 
+        if 'sabbath_mode' in data and not isinstance(data['sabbath_mode'], bool):
+            return jsonify({'error': 'sabbath_mode must be a boolean'}), 400
+
         hmac_key = data.get('hmac_key', '')
         if hmac_key:
             if len(hmac_key) != 64:

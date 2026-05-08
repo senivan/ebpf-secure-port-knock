@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export const LoginPage = () => {
   const { login } = useAuth();
-  const [username, setUsername] = useState('admin');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

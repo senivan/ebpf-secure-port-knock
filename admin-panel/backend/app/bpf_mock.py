@@ -24,7 +24,8 @@ class MockBPFMapAccessor:
             'bind_window_ms': 15000,
             'replay_window_ms': 30000,
             'duration_sec': 86400,
-            'hmac_key': '0' * 64
+            'hmac_key': '0' * 64,
+            'sabbath_mode': False,
         }
         self.counters = {
             'knock_seen': 0,
@@ -75,16 +76,26 @@ class MockBPFMapAccessor:
         }
 
     def get_daemon_status(self) -> Dict[str, Any]:
+        sabbath_mode = bool(self.config.get('sabbath_mode', False))
         return {
             'running': self.daemon_running,
             'pids': [99999] if self.daemon_running else [],
             'binary': 'mock-knockd',
             'log_path': self.log_path,
+            'sabbath_mode': sabbath_mode,
+            'sabbath_active': sabbath_mode and time.localtime().tm_wday == 5,
         }
 
     def start_daemon(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if config:
             self.config.update(config)
+        if self.config.get('sabbath_mode', False) and time.localtime().tm_wday == 5:
+            return {
+                'success': False,
+                'error': 'Sabbath mode is active; knockd will not start on Saturday',
+                'sabbath_active': True,
+                'config': self.config.copy(),
+            }
         self.daemon_running = True
         self.save_mock_data()
         return {

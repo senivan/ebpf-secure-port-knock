@@ -18,6 +18,10 @@
 #define TIME_OFFSET_REFRESH_INTERVAL_SEC 5
 #endif
 
+#ifndef SABBATH_CHECK_INTERVAL_SEC
+#define SABBATH_CHECK_INTERVAL_SEC 60
+#endif
+
 static volatile sig_atomic_t g_stop;
 
 static void on_signal(int signo)
@@ -42,7 +46,8 @@ static void usage(const char *prog)
             "  --timeout-ms <ms>            Session lifetime after bind (default: %u)\n"
             "  --bind-window-ms <ms>        Time to bind first protected flow (default: %u)\n"
             "  --replay-window-ms <ms>      Replay reject window for control packets (default: %u, min: %u)\n"
-            "  --duration-sec <sec>         Exit after N seconds (default: 0 = run until signal)\n",
+            "  --duration-sec <sec>         Exit after N seconds (default: 0 = run until signal)\n"
+            "  --sabbath-mode              Do not run the XDP gate on Saturdays (local time)\n",
             prog,
             prog,
             prog,
@@ -88,17 +93,38 @@ static int monotonic_now_sec(time_t *out)
     return 0;
 }
 
-static int daemon_wait_loop(struct knock_loader_handle *loader_handle, int duration_sec)
+static int is_sabbath_day_now(void)
+{
+    time_t now;
+    struct tm local_tm;
+
+    now = time(NULL);
+    if (now == (time_t)-1) {
+        fprintf(stderr, "warn: failed to read realtime clock for sabbath mode\n");
+        return 0;
+    }
+
+    if (localtime_r(&now, &local_tm) == NULL) {
+        fprintf(stderr, "warn: failed to convert realtime clock for sabbath mode\n");
+        return 0;
+    }
+
+    return local_tm.tm_wday == 6;
+}
+
+static int daemon_wait_loop(struct knock_loader_handle *loader_handle, int duration_sec, int sabbath_mode)
 {
     time_t now_sec;
     time_t end_sec = 0;
     time_t next_refresh_sec;
+    time_t next_sabbath_check_sec;
 
     if (monotonic_now_sec(&now_sec) != 0) {
         return -1;
     }
 
     next_refresh_sec = now_sec + TIME_OFFSET_REFRESH_INTERVAL_SEC;
+    next_sabbath_check_sec = now_sec + SABBATH_CHECK_INTERVAL_SEC;
     if (duration_sec > 0) {
         end_sec = now_sec + duration_sec;
     }
@@ -116,6 +142,14 @@ static int daemon_wait_loop(struct knock_loader_handle *loader_handle, int durat
                 return -1;
             }
             next_refresh_sec = now_sec + TIME_OFFSET_REFRESH_INTERVAL_SEC;
+        }
+
+        if (sabbath_mode && now_sec >= next_sabbath_check_sec) {
+            if (is_sabbath_day_now()) {
+                printf("Sabbath mode active: detaching XDP gate for Saturday.\n");
+                return 0;
+            }
+            next_sabbath_check_sec = now_sec + SABBATH_CHECK_INTERVAL_SEC;
         }
     }
 
@@ -330,6 +364,7 @@ static int cmd_daemon(int argc, char **argv)
         {"users-file", required_argument, NULL, 'f'},
         {"duration-sec", required_argument, NULL, 'd'},
         {"pin-dir", required_argument, NULL, 'P'},
+        {"sabbath-mode", no_argument, NULL, 'S'},
         {NULL, 0, NULL, 0},
     };
 
@@ -353,10 +388,11 @@ static int cmd_daemon(int argc, char **argv)
     };
     struct knock_loader_handle loader_handle;
     int duration_sec = 0;
+    int sabbath_mode = 0;
     int opt;
 
     optind = 1;
-    while ((opt = getopt_long(argc, argv, "i:o:k:p:t:w:r:s:f:d:P:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "i:o:k:p:t:w:r:s:f:d:P:S", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'i':
             ifname = optarg;
@@ -416,6 +452,9 @@ static int cmd_daemon(int argc, char **argv)
         case 'P':
             loader_opts.pin_dir = optarg;
             break;
+        case 'S':
+            sabbath_mode = 1;
+            break;
         default:
             usage(argv[0]);
             return 1;
@@ -454,6 +493,11 @@ static int cmd_daemon(int argc, char **argv)
 
     loader_opts.ifname = ifname;
 
+    if (sabbath_mode && is_sabbath_day_now()) {
+        printf("Sabbath mode active: not attaching XDP gate on Saturday.\n");
+        return 0;
+    }
+
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
@@ -472,6 +516,9 @@ static int cmd_daemon(int argc, char **argv)
     printf("Bind window: %u ms\n", cfg.bind_window_ms);
     printf("Replay window: %u ms\n", cfg.replay_window_ms);
     printf("Loaded users: %u\n", user_count);
+    if (sabbath_mode) {
+        printf("Sabbath mode: enabled (Saturday local time disables the XDP gate).\n");
+    }
     if (duration_sec == 0) {
         printf("XDP program attached. Running until signal.\n");
     } else {
@@ -479,7 +526,7 @@ static int cmd_daemon(int argc, char **argv)
         printf("XDP program attached for %d second(s). Press Ctrl+C to stop early.\n", duration_sec);
     }
 
-    if (daemon_wait_loop(&loader_handle, duration_sec) != 0) {
+    if (daemon_wait_loop(&loader_handle, duration_sec, sabbath_mode) != 0) {
         knock_loader_detach(&loader_handle);
         return 1;
     }

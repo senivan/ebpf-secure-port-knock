@@ -19,15 +19,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if token exists in localStorage
+    let mounted = true;
     const storedToken = localStorage.getItem('auth_token');
-    if (storedToken) {
+
+    const restoreSession = async () => {
+      if (!storedToken) {
+        setLoading(false);
+        return;
+      }
+
       apiClient.setToken(storedToken);
-      setToken(storedToken);
-      setIsAuthenticated(true);
-      setUser(localStorage.getItem('username'));
-    }
-    setLoading(false);
+      try {
+        const response = await apiClient.verifyToken();
+        if (!mounted) {
+          return;
+        }
+        setToken(storedToken);
+        setIsAuthenticated(true);
+        setUser(response.user || localStorage.getItem('username'));
+      } catch {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('username');
+        apiClient.setToken('');
+        if (!mounted) {
+          return;
+        }
+        setToken(null);
+        setUser(null);
+        setIsAuthenticated(false);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    restoreSession();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const login = async (username: string, password: string) => {
