@@ -9,6 +9,7 @@ bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 limiter = Limiter(key_func=get_remote_address)
 
 @bp.route('/login', methods=['POST'])
+@limiter.limit('10 per minute; 50 per hour')
 def login():
     """User login endpoint"""
     data = request.get_json()
